@@ -15,17 +15,51 @@
   *{box-sizing:border-box;}
   input{-webkit-appearance:none;appearance:none;font:inherit;}
   .anton{font-weight:800;letter-spacing:-.01em;text-transform:uppercase;}
-  #app{min-height:100dvh;display:flex;flex-direction:column;}
-  .scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #app{height:100dvh;display:flex;flex-direction:column;}
+  .scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .pad{padding:18px 20px 28px;display:flex;flex-direction:column;gap:18px;}
   .kick{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8A9A8F;}
   .tapmute{cursor:pointer;-webkit-tap-highlight-color:transparent;}
   .bkt-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;padding:4px 20px 10px;}
   .bkt-scroll::-webkit-scrollbar{height:0;}
+  #view{flex:1;display:flex;flex-direction:column;min-height:0;}
+
+  /* ---- tab bar con tacca e bolla flottante ---- */
+  .tabbar{--tb-bg:#16201B;--tb-on:#D6FF3D;--tb-off:#6C7A70;--tb-h:64px;--tb-lift:26px;
+    position:relative;flex-shrink:0;padding-top:var(--tb-lift);padding-bottom:env(safe-area-inset-bottom);
+    -webkit-tap-highlight-color:transparent;}
+  .tabbar::after{content:"";position:absolute;left:0;right:0;bottom:0;height:env(safe-area-inset-bottom);
+    background:var(--tb-bg);}
+  .tabbar__surface{position:relative;height:var(--tb-h);}
+  .tabbar__bg{position:absolute;inset:0;display:block;overflow:visible;
+    fill:var(--tb-bg);stroke:rgba(244,241,230,.1);stroke-width:1;}
+  .tabbar__items{position:absolute;inset:0;display:flex;padding:0 4px;}
+  .tabbar__item{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    gap:5px;padding:0 0 11px;border:0;background:none;color:var(--tb-off);font:inherit;cursor:pointer;}
+  .tabbar__item:focus-visible{outline:2px solid var(--tb-on);outline-offset:-6px;border-radius:12px;}
+  .tabbar__icon{display:block;width:21px;height:21px;margin-top:auto;
+    transition:opacity .16s ease,transform .26s cubic-bezier(.34,1.4,.5,1);}
+  .tabbar__icon svg{width:100%;height:100%;}
+  .tabbar__bubble svg{width:23px;height:23px;}
+  .tabbar__icon svg,.tabbar__bubble svg{display:block;fill:none;stroke:currentColor;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round;}
+  .tabbar__label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;line-height:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tabbar__item.is-active{color:var(--tb-on);}
+  .tabbar__item.is-active .tabbar__icon{opacity:0;transform:translateY(-12px) scale(.7);}
+  .tabbar__bubble{position:absolute;left:0;display:grid;place-items:center;border-radius:50%;
+    background:var(--tb-on);color:#0B110E;box-shadow:0 8px 20px rgba(214,255,61,.25);
+    pointer-events:none;will-change:transform;}
+  .tabbar__bubble.is-swap svg{animation:tb-in .32s cubic-bezier(.34,1.5,.5,1);}
+  @keyframes tb-in{0%{transform:translateY(7px) scale(.55);opacity:0}100%{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){
+    .tabbar__icon{transition:none}
+    .tabbar__bubble.is-swap svg{animation:none}
+  }
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div id="view"></div><nav id="tabbar" class="tabbar" aria-label="Navigazione"></nav></div>
 <script>
 var P=function(n,f,e,r,d,g){return{nick:n,name:f,elo:e,record:r,delta:d,gender:g||"M"}};
 var ROSTER=[P("Zanza","Andrea Zanetti",1842,"31V · 9S","+18"),P("Il Muro","Marco Pellegrini",1788,"28V · 14S","-12"),
@@ -1077,31 +1111,158 @@ function tour(){
   '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#8A9A8F;padding:8px;text-decoration:underline">Nuovo torneo</div></div>';
 }
 
-function tabs(){
-  return '<div style="display:flex;border-top:1px solid rgba(244,241,230,.1);background:rgba(11,17,14,.98);'+
-  'padding:8px 4px calc(env(safe-area-inset-bottom) + 8px);flex-shrink:0">'+
-  [["home","Gabbia","6px"],["book","Prenota","50%"],["pairs","Coppie","3px"],
-   ["rank","Classifica","6px"],["tour","Torneo","3px"],["me","Io","50%"]].map(function(t){
-    var on=S.screen===t[0]||(t[0]==="rank"&&(S.screen==="add"||S.screen==="result"))||(t[0]==="me"&&S.screen==="editme");
-    return '<div class="tapmute" onclick="A.nav(\''+t[0]+'\')" style="flex:1;display:flex;flex-direction:column;'+
-    'align-items:center;gap:6px;padding:8px 0;min-height:44px;color:'+(on?"#D6FF3D":"#6C7A70")+'">'+
-    '<div style="width:20px;height:20px;border-radius:'+t[2]+';border:2px solid currentColor;background:'+
-    (on?"#D6FF3D":"transparent")+'"></div>'+
-    '<div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:700">'+t[1]+'</div></div>'
-  }).join("")+'</div>';
+/* ---------- tab bar: sagoma con tacca concava + bolla flottante ----------
+   La barra non viene ridisegnata a ogni render: vive fuori da #view, così la
+   molla che sposta tacca e bolla non viene mai interrotta.                 */
+function TabBar(root,opt){
+  this.o=Object.assign({bubbleRadius:24,bubbleY:6,gap:5,shoulder:10,corner:0,
+    stiffness:210,damping:26,active:0,onChange:null},opt||{});
+  this.root=root;
+  this.items=Array.prototype.slice.call(root.querySelectorAll(".tabbar__item"));
+  this.index=this.o.active;this.x=0;this.vx=0;this.target=0;this.raf=null;
+  this._build();this._bind();this._measure();this.x=this.target;this.select(this.index,true);
+}
+TabBar.prototype._build=function(){
+  var s=document.createElement("div");s.className="tabbar__surface";
+  this.svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  this.svg.setAttribute("class","tabbar__bg");
+  this.path=document.createElementNS("http://www.w3.org/2000/svg","path");
+  this.svg.appendChild(this.path);
+  this.strip=document.createElement("div");this.strip.className="tabbar__items";
+  this.items.forEach(function(it){this.strip.appendChild(it)},this);
+  this.bubble=document.createElement("div");this.bubble.className="tabbar__bubble";
+  this.bubble.style.width=this.bubble.style.height=(this.o.bubbleRadius*2)+"px";
+  this.bubble.style.top=(this.o.bubbleY-this.o.bubbleRadius)+"px";
+  s.appendChild(this.svg);s.appendChild(this.strip);s.appendChild(this.bubble);
+  this.root.appendChild(s);this.surface=s;
+  this.root.style.setProperty("--tb-lift",(this.o.bubbleRadius-this.o.bubbleY+8)+"px");
+};
+TabBar.prototype._bind=function(){
+  var self=this;
+  this.items.forEach(function(item,i){
+    item.setAttribute("type","button");
+    item.addEventListener("click",function(){self.select(i)});
+    item.addEventListener("keydown",function(e){
+      var d=e.key==="ArrowRight"?1:(e.key==="ArrowLeft"?-1:0);if(!d)return;
+      e.preventDefault();
+      var n=Math.max(0,Math.min(self.items.length-1,i+d));
+      self.items[n].focus();self.select(n);
+    });
+  });
+  if(window.ResizeObserver){
+    this.ro=new ResizeObserver(function(){self._measure();self.x=self.target;self._render()});
+    this.ro.observe(this.surface);
+  }else{
+    window.addEventListener("resize",function(){self._measure();self.x=self.target;self._render()});
+  }
+};
+TabBar.prototype._measure=function(){
+  var w=this.surface.clientWidth;
+  if(!w)return false;                       // barra nascosta: niente misure
+  this.w=w;this.h=this.surface.clientHeight;
+  this.svg.setAttribute("viewBox","0 0 "+this.w+" "+this.h);
+  this.svg.setAttribute("width",this.w);this.svg.setAttribute("height",this.h);
+  this.centers=this.items.map(function(it){return it.offsetLeft+it.offsetWidth/2});
+  this.target=this.centers[this.index];
+  return true;
+};
+TabBar.prototype._path=function(cx){
+  var w=this.w,h=this.h,R=this.o.bubbleRadius+this.o.gap,cy=this.o.bubbleY,S2=this.o.shoulder;
+  var CR=Math.min(this.o.corner,h/2);
+  cx=Math.max(R,Math.min(w-R,cx));
+  var d=Math.sqrt(Math.max(0,(R+S2)*(R+S2)-(S2-cy)*(S2-cy)));
+  var lx=cx-d,rx=cx+d;
+  var t=function(sx){var vx=cx-sx,vy=cy-S2,l=Math.hypot(vx,vy)||1;return[sx+vx/l*S2,S2+vy/l*S2]};
+  var p1=t(lx),p2=t(rx);
+  var CRl=Math.max(0,Math.min(CR,lx)),CRr=Math.max(0,Math.min(CR,w-rx));
+  return["M",Math.max(lx,CRl),0,"A",S2,S2,0,0,1,p1[0],p1[1],"A",R,R,0,0,0,p2[0],p2[1],
+    "A",S2,S2,0,0,1,Math.min(rx,w-CRr),0,"H",w-CRr,"A",CRr,CRr,0,0,1,w,CRr,
+    "V",h-CR,"A",CR,CR,0,0,1,w-CR,h,"H",CR,"A",CR,CR,0,0,1,0,h-CR,
+    "V",CRl,"A",CRl,CRl,0,0,1,CRl,0,"Z"].join(" ");
+};
+TabBar.prototype._render=function(){
+  if(!this.w)return;
+  var R=this.o.bubbleRadius;
+  this.path.setAttribute("d",this._path(this.x));
+  var pop=1+Math.min(Math.abs(this.vx),1600)/1600*.08;
+  this.bubble.style.transform="translate3d("+(this.x-R)+"px,0,0) scale("+pop.toFixed(3)+")";
+};
+TabBar.prototype._animate=function(){
+  var self=this;if(this.raf)return;
+  if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches){
+    this.x=this.target;this.vx=0;this._render();return;
+  }
+  var last=performance.now();
+  var step=function(now){
+    var dt=Math.min((now-last)/1000,.032);last=now;
+    self.vx+=(-self.o.stiffness*(self.x-self.target)-self.o.damping*self.vx)*dt;
+    self.x+=self.vx*dt;
+    if(Math.abs(self.x-self.target)<.15&&Math.abs(self.vx)<1){
+      self.x=self.target;self.vx=0;self._render();self.raf=null;return;
+    }
+    self._render();self.raf=requestAnimationFrame(step);
+  };
+  this.raf=requestAnimationFrame(step);
+};
+TabBar.prototype.select=function(i,silent){
+  i=Math.max(0,Math.min(this.items.length-1,i));
+  var changed=i!==this.index;
+  this.index=i;
+  if(!this._measure())return this;
+  this.items.forEach(function(it,n){
+    it.classList.toggle("is-active",n===i);
+    it.setAttribute("aria-current",n===i?"page":"false");
+    it.tabIndex=n===i?0:-1;
+  });
+  var ic=this.items[i].querySelector(".tabbar__icon");
+  if(this.bubble.dataset.at!==String(i)){
+    this.bubble.dataset.at=String(i);
+    this.bubble.innerHTML=ic?ic.innerHTML:"";
+    this.bubble.classList.remove("is-swap");void this.bubble.offsetWidth;
+    this.bubble.classList.add("is-swap");
+  }
+  this._animate();
+  if(changed&&!silent&&this.o.onChange)this.o.onChange(i);
+  return this;
+};
+
+var ICON={
+  home:'<svg viewBox="0 0 24 24"><path d="M4 10.6 12 4.2l8 6.4V19a1 1 0 0 1-1 1h-4.2v-5.2H9.2V20H5a1 1 0 0 1-1-1z"/></svg>',
+  cal:'<svg viewBox="0 0 24 24"><rect x="3.6" y="5.4" width="16.8" height="14.2" rx="3"/><path d="M8 3.4v3.6M16 3.4v3.6M3.6 10.4h16.8"/></svg>',
+  pair:'<svg viewBox="0 0 24 24"><circle cx="9.2" cy="8.4" r="2.9"/><path d="M3.8 19.4c0-2.9 2.4-4.8 5.4-4.8s5.4 1.9 5.4 4.8"/><path d="M16.6 6.4a3 3 0 0 1 0 5.9M17.8 14.9c1.6.6 2.6 1.9 2.6 3.5"/></svg>',
+  rank:'<svg viewBox="0 0 24 24"><path d="M3.8 20.2h16.4"/><path d="M5.4 20.2v-5.4h4.1v5.4M9.5 20.2V8.4h5v11.8M14.5 20.2v-7.6h4.1v7.6"/></svg>',
+  tour:'<svg viewBox="0 0 24 24"><path d="M4 6.4h3.8V12h4.6M4 17.6h3.8V12"/><circle cx="17.2" cy="12" r="2.6"/></svg>',
+  me:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.3"/><path d="M5.6 20c0-3.5 2.9-5.9 6.4-5.9s6.4 2.4 6.4 5.9"/></svg>'
+};
+var TABS=[["home","Gabbia",ICON.home],["book","Prenota",ICON.cal],["pairs","Coppie",ICON.pair],
+          ["rank","Classifica",ICON.rank],["tour","Torneo",ICON.tour],["me","Io",ICON.me]];
+function tabIndex(){
+  var s=S.screen;
+  if(s==="add"||s==="result")s="rank";
+  if(s==="editme")s="me";
+  for(var i=0;i<TABS.length;i++)if(TABS[i][0]===s)return i;
+  return 0;
+}
+var TB=null;
+function initTabs(nav){
+  nav.innerHTML=TABS.map(function(t){
+    return '<button class="tabbar__item" type="button"><span class="tabbar__icon">'+t[2]+
+           '</span><span class="tabbar__label">'+t[1]+'</span></button>';
+  }).join("");
+  TB=new TabBar(nav,{active:tabIndex(),onChange:function(i){A.nav(TABS[i][0])}});
 }
 
 function render(){
-  if(!S.me&&S.screen!=="add"){
-    document.getElementById("app").innerHTML=header()+'<div class="scroll">'+mePicker()+'</div>';
-    return;
-  }
-  if(!S.me&&S.screen==="add"){
-    document.getElementById("app").innerHTML=header()+'<div class="scroll">'+addScreen()+'</div>';
+  var view=document.getElementById("view"),nav=document.getElementById("tabbar");
+  if(!S.me){
+    view.innerHTML=header()+'<div class="scroll">'+(S.screen==="add"?addScreen():mePicker())+'</div>';
+    nav.style.display="none";
     return;
   }
   var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour}[S.screen]||home;
-  document.getElementById("app").innerHTML=header()+'<div class="scroll">'+body()+'</div>'+tabs();
+  view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
+  nav.style.display="";
+  if(!TB)initTabs(nav);else TB.select(tabIndex(),true);
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
 }
 render();
