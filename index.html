@@ -105,6 +105,7 @@ if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
 if(typeof S.adminTarget==="undefined")S.adminTarget=null;
+if(typeof S.adminNick==="undefined")S.adminNick="";
 if(typeof S.nationality==="undefined")S.nationality="";
 if(typeof S.tournament==="undefined")S.tournament=null;
 if(S.tournament&&S.tournament.rounds&&S.tournament.rounds[0]&&S.tournament.rounds[0][0]&&
@@ -295,6 +296,71 @@ function needsMyVote(m){
   var n=myNick();
   return isProposed(m)&&!!n&&matchNicks(m).indexOf(n)!==-1&&(m.confirmations||{})[n]!==true;
 }
+/* ---- rinomina di un soprannome, ovunque compaia ----
+   il nick non è solo un'etichetta: è la chiave dentro matches.team_a/team_b,
+   matches.confirmations, penalties.who e tournaments.rounds. Cambiarlo solo su
+   players scollegherebbe tutto lo storico, quindi si riscrive dappertutto. */
+function renameInMatch(m,vecchio,nuovo){
+  var ren=function(n){return n===vecchio?nuovo:n};
+  var teams=[0,1].map(function(i){
+    return{players:m.teams[i].players.map(function(p){return Object.assign({},p,{nick:ren(p.nick)})})}});
+  var conf=null;
+  if(m.confirmations){conf={};Object.keys(m.confirmations).forEach(function(k){conf[ren(k)]=m.confirmations[k]})}
+  return Object.assign({},m,{teams:teams,confirmations:m.confirmations?conf:m.confirmations,
+    proposedBy:m.proposedBy?ren(m.proposedBy):m.proposedBy});
+}
+function matchHasNick(m,nick){return matchNicks(m).indexOf(nick)!==-1}
+function renameInRounds(rounds,vecchio,nuovo){
+  var ren=function(n){return n===vecchio?nuovo:n};
+  return (rounds||[]).map(function(round){
+    return round.map(function(g){
+      var conv=function(t){return Array.isArray(t)?t.map(ren):t};
+      return Object.assign({},g,{a:conv(g.a),b:conv(g.b),
+        winner:Array.isArray(g.winner)?g.winner.map(ren):g.winner});
+    });
+  });
+}
+function renameEverywhere(vecchio,nuovo){
+  var ren=function(n){return n===vecchio?nuovo:n};
+  var toccate=S.matches.filter(function(m){return matchHasNick(m,vecchio)})
+    .concat(S.history.filter(function(m){return matchHasNick(m,vecchio)}));
+  S.matches=S.matches.map(function(m){return matchHasNick(m,vecchio)?renameInMatch(m,vecchio,nuovo):m});
+  S.history=S.history.map(function(m){return matchHasNick(m,vecchio)?renameInMatch(m,vecchio,nuovo):m});
+  var penToccate=[];
+  S.penalties=S.penalties.map(function(p){
+    if(String(p.who||"").indexOf(vecchio)===-1)return p;
+    var np=Object.assign({},p,{who:String(p.who).split(vecchio).join(nuovo)});
+    penToccate.push(np);return np;
+  });
+  if(S.tournament&&S.tournament.rounds){
+    S.tournament=Object.assign({},S.tournament,{rounds:renameInRounds(S.tournament.rounds,vecchio,nuovo)});
+    if(S.tournament.champion)S.tournament.champion=String(S.tournament.champion).split(vecchio).join(nuovo);
+  }
+  S.lineup=(S.lineup||[]).map(ren);
+  S.tourTeams=(S.tourTeams||[]).map(function(t){return t.map(ren)});
+  if(S.tourPick)S.tourPick=ren(S.tourPick);
+  if(S.tourSelected&&S.tourSelected[vecchio]){
+    S.tourSelected[nuovo]=S.tourSelected[vecchio];delete S.tourSelected[vecchio];
+  }
+  if(S.me===vecchio)S.me=nuovo; /* identità ancora legata al nick, nei salvataggi vecchi */
+  if(!sb)return;
+  /* server: una riga alla volta, i volumi sono piccoli */
+  S.matches.concat(S.history).forEach(function(m){
+    if(!matchHasNick(m,nuovo))return;
+    if(!toccate.some(function(t){return t.id===m.id}))return;
+    if(String(m.id).indexOf("local-")===0)return;
+    var payload={team_a:m.teams[0].players,team_b:m.teams[1].players};
+    var esteso=Object.assign({},payload,{proposed_by:m.proposedBy||null,confirmations:m.confirmations||null});
+    sb.from("matches").update(esteso).eq("id",m.id).then(function(res){
+      if(res&&res.error)sb.from("matches").update(payload).eq("id",m.id).then(function(){});
+    });
+  });
+  penToccate.forEach(function(p){
+    if(p.id)sb.from("penalties").update({who:p.who}).eq("id",p.id).then(function(){});
+  });
+  if(S.tournament&&S.tournament.id)
+    sb.from("tournaments").update({rounds:S.tournament.rounds}).eq("id",S.tournament.id).then(function(){});
+}
 function busyNicks(day,slot){
   var out={};
   S.matches.forEach(function(m){
@@ -435,7 +501,7 @@ var A={
     if(!isAdminUser())return;
     var p=S.roster.filter(function(r){return r.nick===nick})[0];
     if(!p)return;
-    S.adminTarget=nick;
+    S.adminTarget=nick;S.adminNick=nick;
     S.name=p.name==="—"?"":p.name;S.gender=p.gender||"M";
     S.nationality=p.nationality||"";S.elo=String(p.elo);
     S.screen="admedit";save();render();
@@ -444,11 +510,23 @@ var A={
     if(!isAdminUser())return;
     var p=S.roster.filter(function(r){return r.nick===S.adminTarget})[0];
     if(!p)return;
+    var nuovo=String(S.adminNick||"").trim();
+    var rinomina=nuovo&&nuovo!==p.nick;
+    if(rinomina){
+      if(S.roster.some(function(r){return r.nick!==p.nick&&r.nick.toLowerCase()===nuovo.toLowerCase()})){
+        alert("Il soprannome \""+nuovo+"\" è già di un altro giocatore.");return;
+      }
+      var quante=S.matches.concat(S.history).filter(function(m){return matchHasNick(m,p.nick)}).length;
+      if(!confirm("Rinominare \""+p.nick+"\" in \""+nuovo+"\"?\n\nVerrà aggiornato ovunque: "+
+        quante+" partite, penitenze e tabellone del torneo."))return;
+    }
     var patch={name:S.name.trim()||"—",gender:S.gender,
       nationality:S.nationality||"",elo:parseInt(S.elo,10)||p.elo};
+    if(rinomina)patch.nick=nuovo;
     S.roster=S.roster.map(function(r){return r.nick===p.nick?Object.assign({},r,patch):r})
       .sort(function(a,b){return b.elo-a.elo});
-    S.adminTarget=null;S.screen="rank";save();render();
+    if(rinomina)renameEverywhere(p.nick,nuovo);
+    S.adminTarget=null;S.adminNick="";S.screen="rank";save();render();
     if(sb){
       var dove=function(q){return p.id?q.eq("id",p.id):q.eq("nick",p.nick)};
       dove(sb.from("players").update(patch)).then(function(res){
@@ -456,7 +534,7 @@ var A={
       });
     }
   },
-  cancelAdminEdit:function(){S.adminTarget=null;S.screen="rank";save();render()},
+  cancelAdminEdit:function(){S.adminTarget=null;S.adminNick="";S.screen="rank";save();render()},
   pickRankFilter:function(f){S.rankFilter=f;save();render()},
   pickTourSize:function(n){S.tourSize=n;save();render()},
   pickTourType:function(v){S.tourType=v;save();render()},
@@ -1177,8 +1255,10 @@ function adminEditScreen(){
   return '<div class="pad" style="gap:16px">'+
   '<div style="background:rgba(200,255,61,.1);border:1px solid rgba(200,255,61,.3);border-radius:12px;padding:12px 14px;'+
   'font-size:12px;color:#C8FF3D;font-weight:600">Modalità amministratore — stai modificando '+esc(p.nick)+'</div>'+
-  '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Il soprannome non è modificabile: è la chiave con cui '+esc(p.nick)+
-  ' compare dentro le partite già giocate, cambiarlo scollegherebbe il suo storico.</div>'+
+  campo("Soprannome","adminNick","es. Tornado")+
+  '<div style="font-size:12px;color:#8C99A8;line-height:1.5;margin-top:-8px">Cambiandolo verrà riscritto '+
+  'ovunque compaia: partite giocate e da giocare, conferme dei risultati, penitenze e tabellone del torneo. '+
+  'Lo storico non si perde.</div>'+
   campo("Nome e cognome","name","es. Luca Bianchi")+
   '<div><div class="kick" style="margin-bottom:6px">Genere</div><div style="display:flex;gap:8px">'+gender+'</div></div>'+
   countryField(S.nationality)+
