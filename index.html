@@ -32,6 +32,8 @@
   .tapmute{cursor:pointer;-webkit-tap-highlight-color:transparent;}
   .bkt-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;padding:4px 20px 10px;}
   .bkt-scroll::-webkit-scrollbar{height:0;}
+  .dayscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;padding:0 20px;}
+  .dayscroll::-webkit-scrollbar{height:0;}
 </style>
 </head>
 <body>
@@ -164,10 +166,12 @@ function eloSwing(winAvg,loseAvg){return Math.max(1,Math.round(ELO_K*(1-eloExpec
 
 /* --- date reali --- */
 function dowIndex(d){return (d.getDay()+6)%7}
+var MESI=["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
 function upcomingDays(n){
   var base=new Date();base.setHours(0,0,0,0);var out=[];
   for(var i=0;i<n;i++){var d=new Date(base.getTime()+i*86400000);
-    out.push({dow:dowIndex(d),num:d.getDate(),iso:d.toISOString().slice(0,10)})}
+    out.push({dow:dowIndex(d),num:d.getDate(),mese:d.getMonth(),
+      iso:d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)})}
   return out;
 }
 
@@ -1075,15 +1079,20 @@ function home(){
 
 function slotMinutes(t){var p=String(t).split(":");return (+p[0])*60+(+p[1]||0)}
 function book(){
-  /* i prossimi 5 giorni veri, a partire da oggi */
-  var upcoming=upcomingDays(5);
+  /* una settimana intera a partire da oggi, con le date vere */
+  var upcoming=upcomingDays(7);
   if(upcoming.map(function(u){return u.dow}).indexOf(S.day)===-1){S.day=upcoming[0].dow;save()}
-  var days=upcoming.map(function(u){var on=S.day===u.dow;
-    return '<div class="tapmute" onclick="A.pickDay('+u.dow+')" style="flex:1;text-align:center;border-radius:12px;'+
-    'padding:12px 0;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.12)")+
-    ';color:'+(on?"#0B1118":"#FFFFFF")+'">'+
-    '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.7">'+DAYS[u.dow]+'</div>'+
-    '<div class="anton" style="font-size:22px;margin-top:3px">'+u.num+'</div></div>'}).join("");
+  var meseIniziale=upcoming[0].mese;
+  var days=upcoming.map(function(u,k){var on=S.day===u.dow;
+    return '<div class="tapmute" onclick="A.pickDay('+u.dow+')" style="flex:0 0 auto;width:56px;text-align:center;'+
+    'border-radius:12px;padding:10px 0;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+
+    (on?"#C8FF3D":"rgba(255,255,255,.12)")+';color:'+(on?"#0B1118":"#FFFFFF")+'">'+
+    '<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.7">'+
+    (k===0?"Oggi":DAYS[u.dow])+'</div>'+
+    '<div class="anton" style="font-size:22px;margin-top:2px">'+u.num+'</div>'+
+    /* il mese compare solo quando la settimana lo scavalca */
+    '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;'+
+    'height:11px;line-height:11px">'+(u.mese!==meseIniziale?MESI[u.mese]:"")+'</div></div>'}).join("");
   /* orari occupati: presi dalle partite gia confermate su questo campo */
   var taken={};
   S.matches.forEach(function(m){if(m.day===S.day&&m.court===S.court)taken[m.slot]=true});
@@ -1108,7 +1117,8 @@ function book(){
     '<div style="font-size:11px;color:#8C99A8">'+esc(c[1])+'</div></div>'+
     '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+c[2]+'</div></div>'}).join("");
   return '<div class="pad" style="gap:20px">'+
-  '<div><div class="kick" style="margin-bottom:10px">Giorno</div><div style="display:flex;gap:8px">'+days+'</div></div>'+
+  '<div><div class="kick" style="margin-bottom:10px">Giorno</div>'+
+  '<div class="dayscroll"><div style="display:flex;gap:8px;width:max-content">'+days+'</div></div></div>'+
   '<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">'+
   '<div class="kick">Orari</div><div style="font-size:11px;color:#8C99A8">'+
   (Object.keys(taken).length?Object.keys(taken).length+" già prenotati dalla Gabbia":"nessuno ancora occupato")+'</div></div>'+
