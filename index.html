@@ -266,7 +266,10 @@ async function initSync(){
    inesistente vengono riempiti con i giocatori ancora liberi */
 function lineupPlayers(){
   var byNick={};S.roster.forEach(function(p){byNick[p.nick]=p});
-  var free=S.roster.filter(function(p){return S.lineup.indexOf(p.nick)===-1});
+  /* per riempire i posti vuoti si pescano solo giocatori liberi in quel giorno e ora:
+     prima poteva finire in campo qualcuno già impegnato in un'altra partita */
+  var occupati=busyNicks(S.day,S.slot);
+  var free=S.roster.filter(function(p){return S.lineup.indexOf(p.nick)===-1&&!occupati[p.nick]});
   var used={},out=[],fi=0;
   for(var i=0;i<4;i++){
     var p=byNick[S.lineup[i]];
@@ -719,6 +722,16 @@ var A={
   pickWinner:function(w){S.winner=w;save();render()},
   lockMatch:function(){
     var b=balanced();
+    /* ultimo controllo prima di confermare: nessuno può giocare due partite
+       nello stesso giorno alla stessa ora */
+    var occupati=busyNicks(S.day,S.slot);
+    var doppioni=b.teams[0].players.concat(b.teams[1].players)
+      .filter(function(p){return occupati[p.nick]}).map(function(p){return p.nick});
+    if(doppioni.length){
+      alert(doppioni.join(" e ")+(doppioni.length===1?" gioca già":" giocano già")+
+        " "+dayName(S.day)+" alle "+S.slot+".\n\nSostituiscilo dalla panchina, oppure cambia orario.");
+      return;
+    }
     var teamA=b.teams[0].players.map(function(p){return{nick:p.nick,elo:p.elo}});
     var teamB=b.teams[1].players.map(function(p){return{nick:p.nick,elo:p.elo}});
     var match={id:"local-"+Date.now(),day:S.day,slot:S.slot,court:S.court,stake:S.stake,
@@ -884,6 +897,24 @@ function initialsOf(nick){
   var src=(p&&p.name&&p.name!=="—")?p.name:nick;
   return String(src).trim().split(/\s+/).map(function(w){return w[0]||""}).join("").slice(0,2).toUpperCase();
 }
+/* riquadro con la foto del giocatore, largo quanto il posto in campo.
+   Inquadratura ancorata in alto: nelle foto è lì che sta la faccia.
+   Senza foto, le iniziali grandi in lime — stessa altezza, così i due posti restano
+   allineati anche se uno dei due non ha ancora caricato niente. */
+function photoBox(nick,h){
+  var p=S.roster.filter(function(r){return r.nick===nick})[0];
+  var alt=h||118;
+  var base="width:100%;height:"+alt+"px;border-radius:10px;overflow:hidden;";
+  if(p&&p.photo){
+    return '<div style="'+base+'background-image:url(\''+p.photo+'\');background-size:cover;'+
+    'background-position:center top;background-color:#0F1620;border:1px solid rgba(255,255,255,.14)"></div>';
+  }
+  /* iniziali proporzionate all'altezza: la stessa funzione serve i riquadri grandi
+     delle Coppie e quelli piccoli delle partite confermate in Gabbia */
+  return '<div style="'+base+'background:rgba(200,255,61,.14);color:#C8FF3D;display:grid;'+
+  'place-items:center;font-size:'+Math.max(12,Math.round(alt*0.26))+'px;font-weight:700;'+
+  'letter-spacing:.04em">'+esc(initialsOf(nick))+'</div>';
+}
 function courtName(i){return (COURTS[i]||["Campo da definire"])[0]}
 function dayName(i){return DAYS[i]||"—"}
 
@@ -920,24 +951,28 @@ function confirmBlock(m){
 }
 function home(){
   var champ=S.roster[0]||null;
-  /* chi scende in campo: ricavato dalle partite confermate, non da una lista fissa */
-  var seen={},signupList=[];
+  /* chi è libero OGGI: chi gioca lo si vede già nelle card qui sopra, mentre serve
+     sapere chi non è ancora impegnato per riuscire a mettere insieme una partita */
+  var oggi=dowIndex(new Date());
+  var impegnatiOggi={};
   S.matches.forEach(function(m){
-    m.teams[0].players.concat(m.teams[1].players).forEach(function(p){
-      if(seen[p.nick])return;seen[p.nick]=true;
-      signupList.push({nick:p.nick,elo:p.elo,when:dayName(m.day)+" "+m.slot});
-    });
+    if(m.day!==oggi)return;
+    matchNicks(m).forEach(function(n){impegnatiOggi[n]=true});
   });
-  var signups=signupList.length?signupList.map(function(s){
+  var liberi=S.roster.filter(function(r){return !impegnatiOggi[r.nick]});
+  var signups=liberi.length?liberi.map(function(r){
     return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
     'border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 13px">'+
     '<div style="width:34px;height:34px;border-radius:9px;background:rgba(200,255,61,.14);color:#C8FF3D;'+
-    'display:grid;place-items:center;font-weight:700;font-size:13px">'+esc(initialsOf(s.nick))+'</div>'+
-    '<div style="flex:1"><div style="font-size:15px;font-weight:700">'+esc(s.nick)+'</div>'+
-    '<div style="font-size:11px;color:#8C99A8">'+esc(s.when)+'</div></div>'+
-    '<div style="font-size:13px;color:#C8FF3D;font-weight:700">'+s.elo+'</div></div>'}).join(""):
+    'display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0">'+esc(initialsOf(r.nick))+'</div>'+
+    '<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;white-space:nowrap;'+
+    'overflow:hidden;text-overflow:ellipsis">'+
+    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+'</div>'+
+    '<div style="font-size:11px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+    esc(r.name)+'</div></div>'+
+    '<div style="font-size:13px;color:#C8FF3D;font-weight:700;flex-shrink:0">'+r.elo+'</div></div>'}).join(""):
     '<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:12px;'+
-    'padding:16px;text-align:center;color:#8C99A8;font-size:12px">Ancora nessuno in campo.</div>';
+    'padding:16px;text-align:center;color:#8C99A8;font-size:12px">Oggi giocano tutti. Nessuno in panchina.</div>';
   var matchesHtml;
   if(S.matches.length===0){
     matchesHtml='<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:16px;'+
@@ -947,9 +982,18 @@ function home(){
       var ps=m.teams[0].players.concat(m.teams[1].players);
       var pNicks=ps.map(function(p){return p.nick});
       var canCancel=isAdminUser()||(myNick()&&pNicks.indexOf(myNick())!==-1);
-      var chips=ps.map(function(p){return '<div style="flex:1;background:rgba(11,17,24,.75);'+
-        'border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 4px;text-align:center">'+
-        '<div style="font-size:12px;font-weight:700">'+esc(p.nick)+'</div></div>'}).join("");
+      var chipOf=function(p){return '<div style="flex:1;min-width:0;background:rgba(11,17,24,.75);'+
+        'border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px;text-align:center">'+
+        photoBox(p.nick,54)+
+        '<div style="font-size:11px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;'+
+        'text-overflow:ellipsis">'+esc(p.nick)+'</div></div>'};
+      /* le due coppie separate da un "vs": con quattro riquadri in fila non si capiva
+         chi giocasse con chi */
+      var lato=function(team){return '<div style="flex:1;min-width:0;display:flex;gap:6px">'+
+        team.players.map(chipOf).join("")+'</div>'};
+      var chips=lato(m.teams[0])+
+        '<div style="font-size:10px;letter-spacing:.08em;color:#8C99A8;flex-shrink:0">vs</div>'+
+        lato(m.teams[1]);
       /* il risultato lo può segnare solo chi ha giocato (o l'amministratore) */
       var canScore=isAdminUser()||(myNick()&&pNicks.indexOf(myNick())!==-1);
       var azione=isProposed(m)?"":
@@ -965,7 +1009,7 @@ function home(){
       'aria-label="Cancella la partita" style="background:rgba(255,106,53,.14);color:#FF6A35;'+
       'border:1px solid rgba(255,106,53,.35);border-radius:10px;width:44px;height:44px;'+
       'display:grid;place-items:center;font-size:15px;font-weight:700">✕</div>':'')+'</div></div>'+
-      '<div style="display:flex;gap:6px;margin-top:12px">'+chips+'</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'+chips+'</div>'+
       confirmBlock(m)+
       (m.stake?'<div style="margin-top:10px;background:rgba(255,106,53,.1);border:1px solid rgba(255,106,53,.3);'+
       'border-radius:10px;padding:9px 12px;font-size:12px;color:#FF6A35;font-weight:700">In palio: '+esc(m.stake)+'</div>':'')+
@@ -1008,7 +1052,10 @@ function home(){
   '<div class="tapmute" onclick="A.nav(\'book\')" style="font-size:12px;color:#8C99A8;text-decoration:underline">+ prenota</div></div>'+
   matchesHtml+'</div>'+
   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+champCard+penCard+'</div>'+
-  '<div><div class="kick" style="margin-bottom:10px">Chi scende in campo</div>'+
+  '<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">'+
+  '<div class="kick">Chi è libero oggi</div>'+
+  '<div class="tapmute" onclick="A.nav(\'book\')" style="font-size:12px;color:#8C99A8;text-decoration:underline;'+
+  'flex-shrink:0">+ organizza</div></div>'+
   '<div style="display:flex;flex-direction:column;gap:8px">'+signups+'</div></div>'+
   recentHtml+'</div>';
 }
@@ -1072,18 +1119,30 @@ function pairs(){
     var acc=i===0?"#C8FF3D":"#FF6A35";
     var pl=t.players.map(function(p,j){
       var slot=i*2+j,sel=S.selectedSlot===slot,side=j===0?"Sinistra":"Destra";
-      return '<div class="tapmute" onclick="A.pickSlotIdx('+slot+')" style="flex:1;background:rgba(11,17,24,.6);'+
-      'border:2px solid '+(sel?"#C8FF3D":"rgba(255,255,255,.1)")+';border-radius:12px;padding:13px">'+
-      '<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8C99A8">'+side+'</div>'+
-      '<div style="font-size:16px;font-weight:700;margin-top:4px">'+esc(p.nick)+'</div>'+
-      '<div style="font-size:11px;color:#8C99A8;margin-top:3px">'+esc(p.name)+'</div>'+
-      '<div style="font-size:13px;color:#C8FF3D;font-weight:700;margin-top:8px">'+p.elo+'</div></div>'}).join("");
+      var occupato=!!busyNicks(S.day,S.slot)[p.nick];
+      return '<div class="tapmute" onclick="A.pickSlotIdx('+slot+')" style="flex:1;min-width:0;background:rgba(11,17,24,.6);'+
+      'border:2px solid '+(sel?"#C8FF3D":occupato?"#FF6A35":"rgba(255,255,255,.1)")+';border-radius:12px;padding:10px">'+
+      '<div style="position:relative">'+photoBox(p.nick,118)+
+      (occupato?'<div style="position:absolute;top:6px;left:6px;right:6px;background:rgba(255,106,53,.92);'+
+      'color:#0B1118;border-radius:6px;padding:4px 6px;font-size:9px;font-weight:700;letter-spacing:.06em;'+
+      'text-transform:uppercase;text-align:center">Gioca già</div>':'')+
+      /* lato e ELO stanno sopra la foto, in basso, come nell\'hero del profilo */
+      '<div style="position:absolute;left:0;right:0;bottom:0;height:52px;border-radius:0 0 10px 10px;'+
+      'background:linear-gradient(180deg,rgba(11,17,24,0),rgba(11,17,24,.85))"></div>'+
+      '<div style="position:absolute;left:8px;right:8px;bottom:6px;display:flex;justify-content:space-between;'+
+      'align-items:flex-end;gap:6px">'+
+      '<div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#FFFFFF;opacity:.85">'+side+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#C8FF3D">'+p.elo+'</div></div></div>'+
+      '<div style="font-size:16px;font-weight:700;margin-top:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.nick)+'</div>'+
+      '<div style="font-size:11px;color:#8C99A8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+'</div>'+
+      '</div>'}).join("");
     return '<div style="border-radius:18px;padding:16px;background:'+
     (i===0?"linear-gradient(160deg,#18271E,#111A15)":"linear-gradient(160deg,#27180F,#1A1210)")+
     ';border:1px solid '+(i===0?"rgba(200,255,61,.28)":"rgba(255,106,53,.28)")+'">'+
-    '<div style="display:flex;justify-content:space-between;align-items:baseline">'+
-    '<div class="anton" style="font-size:21px;color:'+acc+'">'+esc(t.players[0].nick+" / "+t.players[1].nick)+'</div>'+
-    '<div style="font-size:12px;color:#8C99A8">'+t.sum+' ELO</div></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
+    '<div class="anton" style="font-size:21px;color:'+acc+';min-width:0;white-space:nowrap;'+
+    'overflow:hidden;text-overflow:ellipsis">'+esc(t.players[0].nick+" / "+t.players[1].nick)+'</div>'+
+    '<div style="font-size:12px;color:#8C99A8;flex-shrink:0">'+t.sum+' ELO</div></div>'+
     '<div style="display:flex;gap:8px;margin-top:12px;align-items:center">'+pl+
     '<div class="tapmute" onclick="A.swapSides('+i+')" style="flex-shrink:0;width:34px;height:34px;'+
     'border-radius:50%;border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;'+
@@ -1392,8 +1451,12 @@ function me(){
   /* stessa forma della card "Penitenza pendente" in Gabbia: angoli 16px e bordo
      arancione. Non è più a tutta larghezza dello schermo: sta dentro il padding,
      altrimenti gli angoli arrotondati non si vedrebbero. */
+  /* Bordo lime opaco. Opaco perché un colore trasparente prende quello che ha dietro,
+     e dietro c'è una foto che cambia: sul chiaro spariva. Lime e non arancione perché
+     qui l'arancione significa penitenza o pericolo, mentre questa è la tua schermata —
+     ed è lo stesso colore del badge del ranking che sta dentro la foto. */
   var hero='<div style="position:relative;height:280px;border-radius:16px;overflow:hidden;'+
-    'border:1px solid rgba(255,106,53,.3);'+photoStyle+'">'+
+    'border:2px solid #C8FF3D;'+photoStyle+'">'+
     '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,17,24,.15) 0%,rgba(11,17,24,.35) 45%,rgba(11,17,24,.96) 100%)"></div>'+
     /* niente più ⇄ né 📷 sulla foto: si cambia giocatore e foto da "Modifica profilo".
        Il segnaposto qui sotto resta perché è l'invito a caricare la prima foto. */
