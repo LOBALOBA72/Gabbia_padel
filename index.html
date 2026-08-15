@@ -57,7 +57,7 @@ var COURTS=[["Padel 22 · Campo 1","coperto, vetro nuovo","vedi app","#C8FF3D","
 ["Centogrigio · Campo 2","scoperto","vedi app","#7FA8FF","cg"]];
 var TITLES={home:["La Gabbia","Turno 24 · martedì"],book:["Prenota","campo e orario"],
 pairs:["Coppie","bilanciate a ELO"],rank:["Classifica","punti ELO"],
-me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],tour:["Torneo","tabellone a eliminazione"],
+me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],admedit:["Amministratore","modifica giocatore"],tour:["Torneo","tabellone a eliminazione"],
 stats:["Statistiche","i tuoi numeri"]};
 
 /* Nazionalità: si salva il codice ISO a 2 lettere, la bandiera si ricava da quello
@@ -104,6 +104,7 @@ if(typeof S.me==="undefined")S.me=null;
 if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
+if(typeof S.adminTarget==="undefined")S.adminTarget=null;
 if(typeof S.nationality==="undefined")S.nationality="";
 if(typeof S.tournament==="undefined")S.tournament=null;
 if(S.tournament&&S.tournament.rounds&&S.tournament.rounds[0]&&S.tournament.rounds[0][0]&&
@@ -139,6 +140,12 @@ function myPlayer(){
   return S.roster.filter(function(p){return p.nick===S.me})[0]||null;
 }
 function isMe(p){var m=myPlayer();return !!m&&!!p&&m.nick===p.nick}
+/* amministratore: chi ha il flag is_admin sul proprio profilo (oggi solo MASSICCIO),
+   oppure chi ha sbloccato con il PIN — tenuto come riserva */
+function isAdminUser(){
+  var m=myPlayer();
+  return S.isAdmin===true||!!(m&&m.isAdmin===true);
+}
 function myNick(){var m=myPlayer();return m?m.nick:null}
 /* aggancia S.me all'id vero appena il roster arriva da Supabase */
 function upgradeMeToId(){
@@ -169,7 +176,7 @@ var sb=window.supabase?window.supabase.createClient(SB_URL,SB_KEY):null;
 function parseRecord(rec){var m=(rec||"0V · 0S").match(/\d+/g)||[0,0];return{wins:+m[0],losses:+m[1]}}
 function applyPlayers(rows){
   S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,photo:r.photo||null,
-    nationality:r.nationality||"",
+    nationality:r.nationality||"",isAdmin:r.is_admin===true,
     record:(r.wins||0)+"V · "+(r.losses||0)+"S",delta:r.last_delta||""}}).sort(function(a,b){return b.elo-a.elo});
   upgradeMeToId();
   save();
@@ -177,6 +184,7 @@ function applyPlayers(rows){
 function applyMatches(rows){
   var all=rows.map(function(r){return{id:r.id,day:r.day,slot:r.slot,court:r.court,stake:r.stake||"",
     winner:r.winner||null,playedAt:r.played_at||null,score:r.score||"",
+    proposedBy:r.proposed_by||null,confirmations:r.confirmations||null,
     teams:[{players:r.team_a},{players:r.team_b}]}});
   /* una partita è "in sospeso" finché non ha una data di gioco */
   S.matches=all.filter(function(m){return !m.playedAt});
@@ -270,6 +278,23 @@ function lineupPlayers(){
   return out;
 }
 /* chi è già impegnato in una partita confermata in quel giorno e orario */
+/* ---- stato di una partita rispetto alla conferma del risultato ----
+   nessun winner          -> "da giocare"
+   winner + played_at null -> "proposto", in attesa che tutti confermino
+   played_at valorizzato   -> chiusa, ELO già assegnato (sta nello storico) */
+function matchNicks(m){
+  return m.teams[0].players.concat(m.teams[1].players).map(function(p){return p.nick});
+}
+function pendingVoters(m){
+  var c=m.confirmations||{};
+  return matchNicks(m).filter(function(n){return c[n]!==true});
+}
+function isProposed(m){return !!m.winner&&!m.playedAt}
+/* tocca a me votare? */
+function needsMyVote(m){
+  var n=myNick();
+  return isProposed(m)&&!!n&&matchNicks(m).indexOf(n)!==-1&&(m.confirmations||{})[n]!==true;
+}
 function busyNicks(day,slot){
   var out={};
   S.matches.forEach(function(m){
@@ -405,6 +430,33 @@ var A={
     }
   },
   pickGender:function(g){S.gender=g;save();render()},
+  /* --- amministratore: apre e modifica il profilo di un altro giocatore --- */
+  openPlayer:function(nick){
+    if(!isAdminUser())return;
+    var p=S.roster.filter(function(r){return r.nick===nick})[0];
+    if(!p)return;
+    S.adminTarget=nick;
+    S.name=p.name==="—"?"":p.name;S.gender=p.gender||"M";
+    S.nationality=p.nationality||"";S.elo=String(p.elo);
+    S.screen="admedit";save();render();
+  },
+  saveAdminEdit:function(){
+    if(!isAdminUser())return;
+    var p=S.roster.filter(function(r){return r.nick===S.adminTarget})[0];
+    if(!p)return;
+    var patch={name:S.name.trim()||"—",gender:S.gender,
+      nationality:S.nationality||"",elo:parseInt(S.elo,10)||p.elo};
+    S.roster=S.roster.map(function(r){return r.nick===p.nick?Object.assign({},r,patch):r})
+      .sort(function(a,b){return b.elo-a.elo});
+    S.adminTarget=null;S.screen="rank";save();render();
+    if(sb){
+      var dove=function(q){return p.id?q.eq("id",p.id):q.eq("nick",p.nick)};
+      dove(sb.from("players").update(patch)).then(function(res){
+        if(res&&res.error)dove(sb.from("players").update({name:patch.name,gender:patch.gender,elo:patch.elo})).then(function(){});
+      });
+    }
+  },
+  cancelAdminEdit:function(){S.adminTarget=null;S.screen="rank";save();render()},
   pickRankFilter:function(f){S.rankFilter=f;save();render()},
   pickTourSize:function(n){S.tourSize=n;save();render()},
   pickTourType:function(v){S.tourType=v;save();render()},
@@ -578,7 +630,7 @@ var A={
     var match=S.matches.filter(function(m){return m.id==id})[0];
     if(!match)return;
     var ps=match.teams[0].players.concat(match.teams[1].players).map(function(p){return p.nick});
-    if(!S.isAdmin&&ps.indexOf(myNick())===-1){
+    if(!isAdminUser()&&ps.indexOf(myNick())===-1){
       alert("Questa partita la giocano "+ps.join(", ")+".\n\nTu sei "+(myNick()||"—")+
         ": può cancellarla solo chi ci gioca, oppure l'amministratore (PIN dalla Classifica).");
       return;
@@ -587,18 +639,69 @@ var A={
     S.matches=S.matches.filter(function(m){return m.id!==id});save();render();
     if(sb&&String(id).indexOf("local-")!==0)sb.from("matches").delete().eq("id",id).then(function(){});
   },
+  /* 1) chi c'era PROPONE il risultato: non muove ancora nessun ELO */
   submitResult:function(){
     if(!S.winner)return;
     var match=S.matches.filter(function(m){return m.id==S.activeMatchId})[0];
     if(!match)return;
-    var winnerKey=S.winner;
+    var io=myNick();
+    if(!io||matchNicks(match).indexOf(io)===-1){
+      if(!isAdminUser()){alert("Solo chi ha giocato questa partita può registrarne il risultato.");return;}
+    }
+    var score=[S.set1,S.set2,S.set3].map(function(s){return String(s||"").trim()}).filter(Boolean).join(" ");
+    var conf={};
+    if(io)conf[io]=true; /* il proponente conferma implicitamente */
+    var prop={winner:S.winner,score:score,proposed_by:io||"admin",confirmations:conf};
+    S.matches=S.matches.map(function(m){return m.id===match.id?
+      Object.assign({},m,{winner:prop.winner,score:prop.score,proposedBy:prop.proposed_by,confirmations:conf}):m});
+    S.winner=null;S.set1="";S.set2="";S.set3="";S.activeMatchId=null;S.screen="home";save();render();
+    if(sb)sb.from("matches").update(prop).eq("id",match.id).then(function(res){
+      /* se le colonne della conferma non esistono ancora, si torna al vecchio
+         comportamento: risultato applicato subito, senza voto */
+      if(res&&res.error)A.applyResult(match.id,prop.winner,prop.score);
+    });
+  },
+  /* 2) gli altri confermano o smentiscono */
+  confirmResult:function(id,ok){
+    var m=S.matches.filter(function(x){return x.id==id})[0];
+    if(!m||!isProposed(m))return;
+    var io=myNick();if(!io)return;
+    if(!ok){
+      if(!confirm("Smentire questo risultato? La proposta viene annullata e la partita torna da giocare."))return;
+      S.matches=S.matches.map(function(x){return x.id===m.id?
+        Object.assign({},x,{winner:null,score:"",proposedBy:null,confirmations:null}):x});
+      save();render();
+      if(sb)sb.from("matches").update({winner:null,score:"",proposed_by:null,confirmations:null}).eq("id",m.id).then(function(){});
+      return;
+    }
+    var conf=Object.assign({},m.confirmations||{});conf[io]=true;
+    var restano=matchNicks(m).filter(function(n){return conf[n]!==true});
+    S.matches=S.matches.map(function(x){return x.id===m.id?Object.assign({},x,{confirmations:conf}):x});
+    save();render();
+    if(restano.length===0){A.applyResult(m.id,m.winner,m.score);return;}
+    if(sb)sb.from("matches").update({confirmations:conf}).eq("id",m.id).then(function(){});
+  },
+  /* 3) l'amministratore può chiudere senza aspettare tutti */
+  forceResult:function(id){
+    if(!isAdminUser())return;
+    var m=S.matches.filter(function(x){return x.id==id})[0];
+    if(!m||!isProposed(m))return;
+    if(!confirm("Convalidare il risultato come amministratore, senza attendere le conferme mancanti?"))return;
+    A.applyResult(m.id,m.winner,m.score);
+  },
+  applyResult:function(id,winnerKey,score){
+    var match=S.matches.filter(function(m){return m.id==id})[0];
+    if(!match)return;
+    A._closeMatch(match,winnerKey,score);
+  },
+  _closeMatch:function(match,winnerKey,score){
     var winIdx=winnerKey==="a"?0:1,loseIdx=1-winIdx;
     var winners=match.teams[winIdx].players.map(function(p){return p.nick});
     var losers=match.teams[loseIdx].players.map(function(p){return p.nick});
     var eloOf=function(nick){var p=S.roster.filter(function(r){return r.nick===nick})[0];return p?p.elo:1500};
     /* ELO vero: quanto vale la vittoria dipende da quanto erano favoriti */
     var swing=eloSwing(avg(winners.map(eloOf)),avg(losers.map(eloOf)));
-    var score=[S.set1,S.set2,S.set3].map(function(s){return String(s||"").trim()}).filter(Boolean).join(" ");
+    score=score||match.score||"";
     var updates=[];
     S.roster=S.roster.map(function(r){
       var rec,nr;
@@ -676,6 +779,37 @@ function initialsOf(nick){
 function courtName(i){return (COURTS[i]||["Campo da definire"])[0]}
 function dayName(i){return DAYS[i]||"—"}
 
+/* blocco della proposta di risultato dentro la card della partita */
+function confirmBlock(m){
+  if(!isProposed(m))return "";
+  var wi=m.winner==="b"?1:0;
+  var vinc=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
+  var pers=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
+  var restano=pendingVoters(m);
+  var testa='<div style="margin-top:12px;background:rgba(11,17,24,.6);border:1px solid rgba(255,255,255,.12);'+
+    'border-radius:10px;padding:12px">'+
+    '<div class="kick" style="margin-bottom:6px">Risultato proposto'+(m.proposedBy?" da "+esc(m.proposedBy):"")+'</div>'+
+    '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+esc(vinc)+'</div>'+
+    '<div style="font-size:12px;color:#8C99A8;margin-top:2px">batte '+esc(pers)+(m.score?' · '+esc(m.score):'')+'</div>';
+  if(needsMyVote(m)){
+    return testa+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+    '<div class="tapmute" onclick="A.confirmResult(\''+esc(String(m.id))+'\',true)" '+
+    'style="flex:1;background:#C8FF3D;color:#0B1118;border-radius:10px;height:44px;display:grid;place-items:center;'+
+    'font-size:13px;font-weight:700">Confermo</div>'+
+    '<div class="tapmute" onclick="A.confirmResult(\''+esc(String(m.id))+'\',false)" '+
+    'style="flex:1;background:rgba(255,106,53,.14);color:#FF6A35;border:1px solid rgba(255,106,53,.35);'+
+    'border-radius:10px;height:44px;display:grid;place-items:center;font-size:13px;font-weight:700">Non è andata così</div>'+
+    '</div></div>';
+  }
+  var attesa='<div style="font-size:11px;color:#8C99A8;margin-top:10px">'+
+    (restano.length?'In attesa della conferma di '+esc(restano.join(", ")):'Tutti hanno confermato')+'</div>';
+  var forza=isAdminUser()&&restano.length?
+    '<div class="tapmute" onclick="A.forceResult(\''+esc(String(m.id))+'\')" '+
+    'style="margin-top:10px;border:1px solid rgba(200,255,61,.4);color:#C8FF3D;border-radius:10px;height:44px;'+
+    'display:grid;place-items:center;font-size:12px;font-weight:700">Convalida come amministratore</div>':'';
+  return testa+attesa+forza+'</div>';
+}
 function home(){
   var champ=S.roster[0]||null;
   /* chi scende in campo: ricavato dalle partite confermate, non da una lista fissa */
@@ -704,23 +838,27 @@ function home(){
     matchesHtml='<div style="display:flex;flex-direction:column;gap:10px">'+S.matches.map(function(m){
       var ps=m.teams[0].players.concat(m.teams[1].players);
       var pNicks=ps.map(function(p){return p.nick});
-      var canCancel=S.isAdmin||(myNick()&&pNicks.indexOf(myNick())!==-1);
+      var canCancel=isAdminUser()||(myNick()&&pNicks.indexOf(myNick())!==-1);
       var chips=ps.map(function(p){return '<div style="flex:1;background:rgba(11,17,24,.75);'+
         'border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 4px;text-align:center">'+
         '<div style="font-size:12px;font-weight:700">'+esc(p.nick)+'</div></div>'}).join("");
+      /* il risultato lo può segnare solo chi ha giocato (o l'amministratore) */
+      var canScore=isAdminUser()||(myNick()&&pNicks.indexOf(myNick())!==-1);
+      var azione=isProposed(m)?"":
+        (canScore?'<div class="tapmute" onclick="A.goResultFor(\''+esc(String(m.id))+'\')" style="background:#C8FF3D;color:#0B1118;border-radius:10px;'+
+        'padding:0 14px;height:44px;display:grid;place-items:center;font-size:12px;font-weight:700;white-space:nowrap">Segna risultato</div>':'');
       return '<div style="border-radius:16px;overflow:hidden;background:linear-gradient(180deg,#1A2432,#0F1620);'+
-      'border:1px solid rgba(200,255,61,.22);padding:16px">'+
+      'border:1px solid '+(needsMyVote(m)?"rgba(255,106,53,.5)":"rgba(200,255,61,.22)")+';padding:16px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
       '<div><div class="anton" style="font-size:24px;line-height:1">'+dayName(m.day)+' '+esc(m.slot)+'</div>'+
       '<div style="font-size:12px;color:#8C99A8;margin-top:4px">'+esc(courtName(m.court))+'</div></div>'+
-      '<div style="display:flex;gap:6px;flex-shrink:0">'+
-      '<div class="tapmute" onclick="A.goResultFor(\''+esc(String(m.id))+'\')" style="background:#C8FF3D;color:#0B1118;border-radius:10px;'+
-      'padding:0 14px;height:44px;display:grid;place-items:center;font-size:12px;font-weight:700;white-space:nowrap">Segna risultato</div>'+
+      '<div style="display:flex;gap:6px;flex-shrink:0">'+azione+
       (canCancel?'<div class="tapmute" onclick="A.cancelMatch(\''+esc(String(m.id))+'\')" '+
       'aria-label="Cancella la partita" style="background:rgba(255,106,53,.14);color:#FF6A35;'+
       'border:1px solid rgba(255,106,53,.35);border-radius:10px;width:44px;height:44px;'+
       'display:grid;place-items:center;font-size:15px;font-weight:700">✕</div>':'')+'</div></div>'+
       '<div style="display:flex;gap:6px;margin-top:12px">'+chips+'</div>'+
+      confirmBlock(m)+
       (m.stake?'<div style="margin-top:10px;background:rgba(255,106,53,.1);border:1px solid rgba(255,106,53,.3);'+
       'border-radius:10px;padding:9px 12px;font-size:12px;color:#FF6A35;font-weight:700">In palio: '+esc(m.stake)+'</div>':'')+
       '</div>'}).join("")+'</div>';
@@ -932,16 +1070,18 @@ function rank(){
     (me?"rgba(200,255,61,.07)":"#141E2A")+';border:1px solid '+
     (me?"rgba(200,255,61,.35)":"rgba(255,255,255,.08)")+';border-radius:12px;padding:12px 13px">'+
     '<div class="anton" style="width:24px;font-size:18px;color:#8C99A8">'+(i+1)+'</div>'+
-    '<div style="flex:1"><div style="font-size:15px;font-weight:700">'+
-    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+'</div>'+
+    '<div '+(isAdminUser()?'class="tapmute" onclick="A.openPlayer(\''+js(r.nick)+'\')"':'')+' style="flex:1">'+
+    '<div style="font-size:15px;font-weight:700">'+
+    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+
+    (isAdminUser()?' <span style="font-size:11px;color:#C8FF3D;font-weight:600">modifica</span>':'')+'</div>'+
     '<div style="font-size:11px;color:#8C99A8">'+esc(r.record)+'</div></div>'+
     '<div style="text-align:right"><div style="font-size:15px;font-weight:700">'+r.elo+'</div>'+
     '<div style="font-size:11px;color:'+dc+'">'+esc(r.delta)+'</div></div>'+
-    (S.isAdmin?'<div class="tapmute" onclick="A.remove(\''+js(r.nick)+'\')" '+
+    (isAdminUser()?'<div class="tapmute" onclick="A.remove(\''+js(r.nick)+'\')" '+
     'style="width:44px;height:44px;margin:-9px -8px -9px 0;border-radius:50%;display:grid;place-items:center;'+
     'color:#8C99A8;font-size:18px">×</div>':'')+'</div>'}).join("");
   return '<div class="pad">'+
-  (S.isAdmin?'<div class="tapmute" onclick="A.nav(\'add\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
+  (isAdminUser()?'<div class="tapmute" onclick="A.nav(\'add\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
   'background:#141E2A;border:1px dashed rgba(200,255,61,.4);border-radius:12px;padding:14px;color:#C8FF3D;'+
   'font-weight:700;font-size:14px">+ Iscrivi un nuovo matto</div>':'')+
   kq+
@@ -949,8 +1089,8 @@ function rank(){
   '<div style="display:flex;gap:8px">'+tabs+'</div>'+
   '<div style="display:flex;gap:8px;align-items:flex-end">'+pod+'</div>'+
   '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>'+
-  '<div class="tapmute" onclick="'+(S.isAdmin?"A.lockAdmin()":"A.tryAdminUnlock()")+'" style="text-align:center;font-size:11px;color:#8C99A8;padding:4px">'+
-  (S.isAdmin?"Modalità amministratore attiva — tocca per uscire":"Accesso amministratore")+'</div></div>';
+  '<div class="tapmute" onclick="'+(isAdminUser()?"A.lockAdmin()":"A.tryAdminUnlock()")+'" style="text-align:center;font-size:11px;color:#8C99A8;padding:4px">'+
+  (isAdminUser()?"Modalità amministratore attiva — tocca per uscire":"Accesso amministratore")+'</div></div>';
 }
 
 function addScreen(){
@@ -1020,6 +1160,34 @@ function editProfileScreen(){
      al primo avvio resterebbe bloccato per sempre nel profilo di un altro */
   '<div class="tapmute" onclick="A.changeMe()" style="text-align:center;font-size:12px;color:#5A6B7D;padding:8px">'+
   'Non sei '+esc(meP.nick)+'? Scegli un altro giocatore</div></div>';
+}
+/* schermata riservata all'amministratore: modifica il profilo di chiunque */
+function adminEditScreen(){
+  if(!isAdminUser())return rank();
+  var p=S.roster.filter(function(r){return r.nick===S.adminTarget})[0];
+  if(!p)return rank();
+  var gender=[["M","Maschio"],["F","Femmina"]].map(function(g){var on=S.gender===g[0];
+    return '<div class="tapmute" onclick="A.pickGender(\''+g[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
+    'padding:14px 0;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
+    ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:14px">'+g[1]+'</div>'}).join("");
+  var campo=function(lbl,k,ph,type){return '<div><div class="kick" style="margin-bottom:6px">'+lbl+'</div>'+
+    '<input value="'+esc(S[k])+'" oninput="A.field(\''+k+'\',this.value)" placeholder="'+ph+'" '+
+    (type?'type="'+type+'" ':'')+'style="width:100%;background:#141E2A;border:1px solid rgba(255,255,255,.16);'+
+    'border-radius:12px;padding:15px;color:#FFFFFF;font-size:16px"></div>'};
+  return '<div class="pad" style="gap:16px">'+
+  '<div style="background:rgba(200,255,61,.1);border:1px solid rgba(200,255,61,.3);border-radius:12px;padding:12px 14px;'+
+  'font-size:12px;color:#C8FF3D;font-weight:600">Modalità amministratore — stai modificando '+esc(p.nick)+'</div>'+
+  '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Il soprannome non è modificabile: è la chiave con cui '+esc(p.nick)+
+  ' compare dentro le partite già giocate, cambiarlo scollegherebbe il suo storico.</div>'+
+  campo("Nome e cognome","name","es. Luca Bianchi")+
+  '<div><div class="kick" style="margin-bottom:6px">Genere</div><div style="display:flex;gap:8px">'+gender+'</div></div>'+
+  countryField(S.nationality)+
+  campo("Punti ELO","elo","1500","number")+
+  '<div class="tapmute" onclick="A.saveAdminEdit()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
+  'text-align:center;font-weight:700;font-size:16px;margin-top:8px">Salva '+esc(p.nick)+'</div>'+
+  '<div class="tapmute" onclick="A.cancelAdminEdit()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div>'+
+  '<div class="tapmute" onclick="A.remove(\''+js(p.nick)+'\')" style="text-align:center;font-size:12px;color:#FF6A35;padding:8px">'+
+  'Elimina '+esc(p.nick)+' dalla Gabbia</div></div>';
 }
 function mePicker(){
   var rows=S.roster.map(function(r){return '<div class="tapmute" onclick="A.pickMe(\''+js(r.id||r.nick)+'\')" '+
@@ -1628,7 +1796,7 @@ var TB=(function(){
 
 function tabIndex(){
   var s=S.screen;
-  if(s==="add"||s==="result")return 3;
+  if(s==="add"||s==="result"||s==="admedit")return 3;
   if(s==="editme"||s==="stats")return 5;
   return Math.max(0,["home","book","pairs","rank","tour","me"].indexOf(s));
 }
@@ -1646,7 +1814,7 @@ function render(){
     return;
   }
   bar.style.display="block";
-  var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen}[S.screen]||home;
+  var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen,admedit:adminEditScreen}[S.screen]||home;
   view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
