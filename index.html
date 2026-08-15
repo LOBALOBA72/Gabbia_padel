@@ -104,6 +104,7 @@ if(typeof S.me==="undefined")S.me=null;
 if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
+if(typeof S.pairCombo==="undefined")S.pairCombo=null;
 if(typeof S.adminTarget==="undefined")S.adminTarget=null;
 if(typeof S.adminNick==="undefined")S.adminNick="";
 if(typeof S.nationality==="undefined")S.nationality="";
@@ -378,7 +379,13 @@ function balanced(){
   var combos=[[0,1,2,3],[0,2,1,3],[0,3,1,2]];
   var sc=combos.map(function(c){var a=pool[c[0]].elo+pool[c[1]].elo,b=pool[c[2]].elo+pool[c[3]].elo;
     return{c:c,diff:Math.abs(a-b),a:a,b:b}}).sort(function(x,y){return x.diff-y.diff});
-  var p=sc[S.pairSeed%sc.length];
+  /* L'accoppiamento scelto resta FISSO finché non premi "Rimescola". Prima veniva
+     ricalcolato a ogni modifica: sostituendo un giocatore, gli altri due si scambiavano
+     di posto da soli e sembrava che l'app avesse cambiato la persona sbagliata. */
+  var p=null;
+  if(S.pairCombo&&S.pairCombo.length===4)
+    p=sc.filter(function(x){return x.c.join(",")===S.pairCombo.join(",")})[0];
+  if(!p){p=sc[S.pairSeed%sc.length];S.pairCombo=p.c.slice();save()}
   /* i riquadri a schermo NON sono nell'ordine di S.lineup: le coppie nascono da una
      permutazione (es. [0,2,1,3]) e i lati si possono invertire. Insieme ai giocatori
      si restituisce quindi anche l'indice che ciascuno occupa in S.lineup: senza,
@@ -396,7 +403,7 @@ var A={
   pickSlot:function(t){set("slot",t)},
   pickCourt:function(i){set("court",i)},
   confirm:function(){set("screen","pairs")},
-  shuffle:function(){S.sideSwap={};set("pairSeed",S.pairSeed+1)},
+  shuffle:function(){S.sideSwap={};S.pairCombo=null;set("pairSeed",S.pairSeed+1)},
   pickSlotIdx:function(i){S.selectedSlot=S.selectedSlot===i?null:i;save();render()},
   swapSides:function(i){
     var b=balanced(),t=b.teams[i].players,a=t[0].nick,c=t[1].nick;
@@ -742,7 +749,7 @@ var A={
     var teamB=b.teams[1].players.map(function(p){return{nick:p.nick,elo:p.elo}});
     var match={id:"local-"+Date.now(),day:S.day,slot:S.slot,court:S.court,stake:S.stake,
       winner:null,playedAt:null,score:"",teams:[{players:teamA},{players:teamB}]};
-    S.matches=S.matches.concat([match]);S.stake="";S.pairSeed=0;S.sideSwap={};S.selectedSlot=null;S.screen="home";save();render();
+    S.matches=S.matches.concat([match]);S.stake="";S.pairSeed=0;S.sideSwap={};S.pairCombo=null;S.selectedSlot=null;S.screen="home";save();render();
     if(sb)sb.from("matches").insert([{day:match.day,slot:match.slot,court:match.court,stake:match.stake,
       team_a:teamA,team_b:teamB}]).select().then(function(res){
         /* sostituisce l'id provvisorio con quello vero, così "Segna risultato" funziona subito */
