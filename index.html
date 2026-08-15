@@ -668,6 +668,17 @@ var A={
   },
   newTournament:function(){
     var old=S.tournament;
+    if(old){
+      /* il torneo è condiviso: annullandolo sparisce dai telefoni di tutti,
+         quindi non basta un tocco su un link */
+      var decisi=0;
+      (old.rounds||[]).forEach(function(r){r.forEach(function(m){if(m.winner)decisi++})});
+      var msg=decisi?
+        "Il torneo ha già "+decisi+(decisi===1?" risultato registrato":" risultati registrati")+
+        ".\n\nAnnullandolo si perdono e il tabellone sparisce anche dagli altri telefoni.\n\nProcedere?":
+        "Annullare il torneo in corso?\n\nSparirà anche dai telefoni degli altri.";
+      if(!confirm(msg))return;
+    }
     S.tournament=null;S.tourSelected={};S.tourTeams=[];S.tourPick=null;save();render();
     if(sb&&old&&old.id)sb.from("tournaments").update({status:"done"}).eq("id",old.id).then(function(){});
   },
@@ -1876,7 +1887,7 @@ function tour(){
     return '<div class="pad">'+
     '<div style="font-size:12px;color:#8C99A8">Campi: '+S.tournament.courts+(S.tournament.duration?" · Match a "+S.tournament.duration+" min":" · Nessun limite di tempo")+'</div>'+
     champHtml+roundsHtml+
-    '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px;text-decoration:underline">Nuovo torneo</div></div>';
+    '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#FF6A35;padding:12px;text-decoration:underline">Annulla e ricomincia</div></div>';
   }
   if(S.tournament.type==="americano"){
     var pts={};
@@ -1912,7 +1923,7 @@ function tour(){
     '<div class="kick">Classifica torneo</div>'+
     '<div style="display:flex;flex-direction:column;gap:6px">'+standingsHtml+'</div>'+
     roundsHtml+
-    '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px;text-decoration:underline">Nuovo torneo</div></div>';
+    '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#FF6A35;padding:12px;text-decoration:underline">Annulla e ricomincia</div></div>';
   }
   var rounds=S.tournament.rounds;
   var champion=null;
@@ -1927,7 +1938,7 @@ function tour(){
   return '<div class="pad">'+
   '<div style="font-size:12px;color:#8C99A8;margin-bottom:8px">Campi: '+S.tournament.courts+(S.tournament.duration?" · Match a "+S.tournament.duration+" min":" · Nessun limite di tempo")+'</div>'+
   champHtml+roundsHtml+
-  '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px;text-decoration:underline">Nuovo torneo</div></div>';
+  '<div class="tapmute" onclick="A.newTournament()" style="text-align:center;font-size:13px;color:#FF6A35;padding:12px;text-decoration:underline">Annulla e ricomincia</div></div>';
 }
 
 var TB=(function(){
@@ -2013,8 +2024,27 @@ function tabIndex(){
 }
 
 var tabsReady=false;
+/* render() riscrive tutto #view, quindi il contenitore che scorre viene ricreato da zero
+   e riparte dall'alto: spuntando un giocatore in fondo alla lista la pagina saltava su.
+   Qui si annota dove eravamo e si rimette la stessa posizione — ma solo se si resta
+   sulla stessa schermata, perché cambiando schermata è giusto ripartire dall'inizio. */
+var lastScreen=null;
+function readScroll(view){
+  var s=view.querySelector(".scroll");
+  var b=view.querySelector(".bkt-scroll");
+  return{y:s?s.scrollTop:0,x:b?b.scrollLeft:0};
+}
+function writeScroll(view,pos,stessaSchermata){
+  if(!stessaSchermata)return;
+  var s=view.querySelector(".scroll");
+  if(s&&pos.y)s.scrollTop=pos.y;
+  var b=view.querySelector(".bkt-scroll");
+  if(b&&pos.x)b.scrollLeft=pos.x;
+}
 function render(){
   var view=document.getElementById("view"),bar=document.getElementById("tabbar");
+  var pos=readScroll(view),stessa=(lastScreen===S.screen);
+  lastScreen=S.screen;
   /* se l'identità salvata non corrisponde più a nessuno nel roster (soprannome
      cambiato, giocatore eliminato) si tornerebbe "fantasmi": si vede tutto ma non
      si può cancellare né modificare niente. Meglio richiedere chi sei. */
@@ -2022,11 +2052,13 @@ function render(){
   if(!S.me){
     bar.style.display="none";
     view.innerHTML=header()+'<div class="scroll">'+(S.screen==="add"?addScreen():mePicker())+'</div>';
+    writeScroll(view,pos,stessa);
     return;
   }
   bar.style.display="block";
   var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen,admedit:adminEditScreen}[S.screen]||home;
   view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
+  writeScroll(view,pos,stessa);
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
