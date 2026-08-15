@@ -1128,9 +1128,11 @@ function me(){
     '<div style="font-size:11px;font-weight:600;color:#C8FF3D">'+rankLabel+'</div></div></div>'+
     /* il pill con l'ELO non serve: è già nel badge in alto nell'header */
     '<div style="font-size:40px;font-weight:600;line-height:1;letter-spacing:-0.5px;color:#FFFFFF;text-shadow:0 2px 12px rgba(0,0,0,.5)">'+esc(meP.nick)+'</div>'+
-    '<div style="font-size:13px;color:#8C99A8;margin-top:4px">'+
-    (meP.nationality?'<span title="'+esc(countryName(meP.nationality))+'">'+flagOf(meP.nationality)+'</span> ':'')+
-    esc(meP.name)+'</div></div></div>';
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">'+
+    (meP.nationality?'<span title="'+esc(countryName(meP.nationality))+'" '+
+      'style="font-size:26px;line-height:1;flex-shrink:0">'+flagOf(meP.nationality)+'</span>':'')+
+    '<span style="font-size:20px;color:#8C99A8;line-height:1.2">'+esc(meP.name)+'</span>'+
+    '</div></div></div>';
   return '<div class="pad" style="padding-top:0;gap:20px">'+hero+
   '<div style="display:flex;gap:12px">'+
   '<div class="tapmute" onclick="A.startEditProfile()" style="flex:1;display:flex;align-items:center;justify-content:center;'+
