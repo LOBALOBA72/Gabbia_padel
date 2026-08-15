@@ -549,7 +549,11 @@ var A={
   },
   formTeams:function(gender,pairMode,size,selectedNicks){
     if(pairMode==="weak"){
-      var p=A.filterPool(gender).slice(0,size),teams=[];
+      /* "Scarsi e scarsoni": il più forte col più scarso, il secondo col penultimo…
+         così ogni coppia ha uno scarso e uno scarsone, e le coppie si equivalgono.
+         Usa solo i giocatori selezionati, non i primi N della classifica. */
+      var p=A.filterPool(gender).filter(function(x){return selectedNicks.indexOf(x.nick)!==-1});
+      var teams=[];
       for(var i=0;i<Math.floor(p.length/2);i++)teams.push([p[i].nick,p[p.length-1-i].nick]);
       return teams;
     }
@@ -604,11 +608,14 @@ var A={
     if(navigator.vibrate)navigator.vibrate([200,100,200]);
   },
   createTournament:function(){
-    var showPicker=!(S.tourType==="elim"&&S.tourPairMode==="weak");
     var selectedNicks=Object.keys(S.tourSelected).filter(function(n){return S.tourSelected[n]});
-    if(showPicker&&S.tourType==="elim"&&S.tourTeams.length<2)return;
-    if(showPicker&&S.tourType==="elim"){
-      var teams=S.tourTeams.filter(function(t){return selectedNicks.indexOf(t[0])!==-1&&selectedNicks.indexOf(t[1])!==-1});
+    if(S.tourType==="elim"){
+      /* "Scarsi e scarsoni" forma le coppie da sé fra i selezionati;
+         "Bilanciate" usa quelle che hai composto a mano */
+      var teams=S.tourPairMode==="weak"?
+        A.formTeams(S.tourGender,"weak",0,selectedNicks):
+        S.tourTeams.filter(function(t){return selectedNicks.indexOf(t[0])!==-1&&selectedNicks.indexOf(t[1])!==-1});
+      if(teams.length<2)return;
       var count=1;while(count*2<=teams.length)count*=2;
       var usable=teams.slice(0,count);
       var round0=[];
@@ -644,7 +651,9 @@ var A={
       var count=1;while(count*2<=pool.length)count*=2;
       if(count<4)return;
       var usable=pool.slice(0,count);
-      startTournament({type:"baraonda",rounds:[genBaraondaRound(usable)],courts:S.tourCourts,duration:S.tourDuration,champion:null});
+      var primoTurno=genBaraondaRound(usable);
+      var opzioni={type:"baraonda",rounds:[primoTurno],courts:S.tourCourts,duration:S.tourDuration,champion:null};
+      sorteggioSlot(primoTurno,usable,function(){startTournament(opzioni)});
       return;
     }
     var teams=A.formTeams(S.tourGender,S.tourPairMode,S.tourSize,selectedNicks);
@@ -680,7 +689,16 @@ var A={
     if(round.every(function(m){return m.winner})){
       var advancing=[];round.forEach(function(m){advancing=advancing.concat(m.winner)});
       if(advancing.length===2){S.tournament.champion=advancing.join(" / ");}
-      else if(advancing.length>=4){S.tournament.rounds.push(genBaraondaRound(advancing));}
+      else if(advancing.length>=4){
+        /* anche i turni successivi passano dalla slot machine: in Baraonda
+           le coppie si risorteggiano ogni volta */
+        var prossimo=genBaraondaRound(advancing);
+        save();render();
+        sorteggioSlot(prossimo,advancing,function(){
+          S.tournament.rounds.push(prossimo);save();render();pushTournament();
+        });
+        return;
+      }
     }
     save();render();pushTournament();
   },
@@ -1535,6 +1553,110 @@ function scoreInput(ri,mi,val){
   'style="width:100%;background:#141E2A;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:9px 11px;'+
   'color:#FFFFFF;font-size:12px;margin-top:-2px">';
 }
+/* ---- sorteggio "slot machine" per la Baraonda ----
+   Il risultato è già deciso quando parte l'animazione: le caselle scorrono a caso e si
+   fermano una alla volta sui nomi veri. Vive in un overlay fuori da #view, così non
+   viene distrutto dai render. Si può saltare toccando lo schermo. */
+function sorteggioSlot(round,pool,onDone){
+  var chiuso=false;
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;z-index:100;background:rgba(11,17,24,.97);"+
+    "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;"+
+    "padding:24px 20px;overflow-y:auto;-webkit-tap-highlight-color:transparent;";
+  var titolo=document.createElement("div");
+  titolo.className="anton";
+  titolo.style.cssText="font-size:26px;color:#C8FF3D;text-align:center;line-height:1.1;";
+  titolo.textContent="SORTEGGIO";
+  var sotto=document.createElement("div");
+  sotto.style.cssText="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8C99A8;margin-top:-8px;";
+  sotto.textContent="chi con chi";
+  ov.appendChild(titolo);ov.appendChild(sotto);
+
+  var celle=[];
+  var cella=function(finale){
+    var el=document.createElement("div");
+    el.style.cssText="flex:1;min-width:0;background:#141E2A;border:1px solid rgba(255,255,255,.12);"+
+      "border-radius:10px;padding:12px 6px;text-align:center;font-size:13px;font-weight:700;"+
+      "color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"+
+      "transition:transform .14s ease,border-color .14s ease;";
+    celle.push({el:el,finale:finale,fermo:false});
+    return el;
+  };
+  var riga=function(team){
+    var d=document.createElement("div");
+    d.style.cssText="display:flex;gap:8px;align-items:center;";
+    d.appendChild(cella(team[0]));
+    var piu=document.createElement("div");
+    piu.style.cssText="color:#8C99A8;font-size:12px;flex-shrink:0;";piu.textContent="+";
+    d.appendChild(piu);d.appendChild(cella(team[1]));
+    return d;
+  };
+  round.forEach(function(g){
+    var card=document.createElement("div");
+    card.style.cssText="width:100%;max-width:420px;background:linear-gradient(180deg,#1A2432,#0F1620);"+
+      "border:1px solid rgba(200,255,61,.22);border-radius:16px;padding:14px;display:flex;"+
+      "flex-direction:column;gap:8px;";
+    card.appendChild(riga(g.a));
+    var vs=document.createElement("div");
+    vs.style.cssText="text-align:center;font-size:10px;letter-spacing:.16em;color:#8C99A8;";
+    vs.textContent="VS";
+    card.appendChild(vs);
+    card.appendChild(riga(g.b));
+    ov.appendChild(card);
+  });
+
+  var azione=document.createElement("div");
+  azione.style.cssText="min-height:52px;display:flex;align-items:center;justify-content:center;";
+  var nota=document.createElement("div");
+  nota.style.cssText="font-size:12px;color:#5A6B7D;";
+  nota.textContent="tocca per saltare";
+  azione.appendChild(nota);
+  ov.appendChild(azione);
+  document.body.appendChild(ov);
+
+  var giro=setInterval(function(){
+    celle.forEach(function(c){
+      if(c.fermo)return;
+      c.el.textContent=pool[Math.floor(Math.random()*pool.length)];
+    });
+  },70);
+  var passo=celle.length>8?150:250;
+  var timers=[];
+  var fermaCella=function(c){
+    if(c.fermo)return;
+    c.fermo=true;c.el.textContent=c.finale;
+    c.el.style.borderColor="rgba(200,255,61,.55)";
+    c.el.style.transform="scale(1.06)";
+    setTimeout(function(){c.el.style.transform="scale(1)"},140);
+  };
+  var finisci=function(){
+    clearInterval(giro);timers.forEach(clearTimeout);
+    celle.forEach(fermaCella);
+    if(navigator.vibrate)navigator.vibrate([25,60,25]);
+    azione.innerHTML="";
+    var btn=document.createElement("div");
+    btn.style.cssText="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:15px 28px;"+
+      "font-weight:700;font-size:15px;cursor:pointer;";
+    btn.textContent="Vai al tabellone";
+    btn.onclick=function(e){e.stopPropagation();chiudi()};
+    azione.appendChild(btn);
+  };
+  var chiudi=function(){
+    if(chiuso)return;chiuso=true;
+    clearInterval(giro);timers.forEach(clearTimeout);
+    if(ov.parentNode)ov.parentNode.removeChild(ov);
+    onDone();
+  };
+  ov.onclick=function(){
+    if(celle.every(function(c){return c.fermo}))chiudi();else finisci();
+  };
+  celle.forEach(function(c,i){
+    timers.push(setTimeout(function(){
+      fermaCella(c);
+      if(i===celle.length-1)finisci();
+    },600+i*passo));
+  });
+}
 function genBaraondaRound(players){
   var shuffled=players.slice();
   for(var i=shuffled.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=shuffled[i];shuffled[i]=shuffled[j];shuffled[j]=t;}
@@ -1648,11 +1770,16 @@ function tour(){
       ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:13px">'+t[1]+'</div>'}).join("");
     var pairModeHtml="";
     if(S.tourType==="elim"&&S.tourGender!=="mixed"){
-      var modes=[["balanced","Bilanciate"],["weak","Scarsi contro scarsoni"]].map(function(t){var on=S.tourPairMode===t[0];
+      var modes=[["balanced","Coppie fisse"],["weak","Scarsi e scarsoni"]].map(function(t){var on=S.tourPairMode===t[0];
         return '<div class="tapmute" onclick="A.pickTourPairMode(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
         'padding:12px 8px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
         ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:12px">'+t[1]+'</div>'}).join("");
-      pairModeHtml='<div><div class="kick" style="margin-bottom:10px">Squadre</div><div style="display:flex;gap:8px">'+modes+'</div></div>';
+      var spiega=S.tourPairMode==="weak"?
+        "Il più forte gioca col più scarso, il secondo col penultimo: ogni coppia ha uno scarso e uno scarsone, e le coppie si equivalgono.":
+        "Componi tu le coppie, toccando due giocatori alla volta qui sotto.";
+      pairModeHtml='<div><div class="kick" style="margin-bottom:10px">Squadre</div>'+
+      '<div style="display:flex;gap:8px">'+modes+'</div>'+
+      '<div style="font-size:11px;color:#8C99A8;line-height:1.5;margin-top:8px">'+spiega+'</div></div>';
     }
     var courts=[1,2,3,4].map(function(n){var on=S.tourCourts===n;
       return '<div class="tapmute" onclick="A.pickTourCourts('+n+')" style="flex:1;text-align:center;border-radius:12px;'+
@@ -1665,7 +1792,7 @@ function tour(){
       ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:12px">'+t[1]+'</div>'}).join("");
     var durHtml='<div><div class="kick" style="margin-bottom:10px">Durata match</div><div style="display:flex;gap:8px">'+durs+'</div></div>';
     var sizeHtml="";
-    var showSizeChips=S.tourGender!=="mixed"&&S.tourPairMode==="weak"&&S.tourType==="elim";
+    var showSizeChips=false; /* i partecipanti si scelgono dall'elenco, anche in automatico */
     if(showSizeChips){
       var sizes=[4,8,16].map(function(n){var on=S.tourSize===n;
         return '<div class="tapmute" onclick="A.pickTourSize('+n+')" style="flex:1;text-align:center;border-radius:12px;'+
@@ -1674,7 +1801,7 @@ function tour(){
       sizeHtml='<div><div class="kick" style="margin-bottom:10px">Quanti giocatori?</div><div style="display:flex;gap:8px">'+sizes+'</div></div>';
     }
     var pickerHtml="";
-    var showPicker=!(S.tourType==="elim"&&S.tourPairMode==="weak");
+    var showPicker=true;
     if(showPicker){
       var pool=A.filterPool(S.tourGender==="mixed"?"all":S.tourGender);
       var count=Object.keys(S.tourSelected).filter(function(n){return S.tourSelected[n]}).length;
@@ -1692,7 +1819,7 @@ function tour(){
     }
     var builderHtml="";
     var selCount=Object.keys(S.tourSelected).filter(function(n){return S.tourSelected[n]}).length;
-    if(showPicker&&S.tourType==="elim"&&selCount>=4){
+    if(S.tourType==="elim"&&S.tourPairMode!=="weak"&&selCount>=4){
       var selectedNicks=Object.keys(S.tourSelected).filter(function(n){return S.tourSelected[n]});
       var paired={};S.tourTeams.forEach(function(t){paired[t[0]]=true;paired[t[1]]=true});
       var unpaired=S.roster.filter(function(r){return selectedNicks.indexOf(r.nick)!==-1&&!paired[r.nick]});
@@ -1714,12 +1841,13 @@ function tour(){
       '<div style="display:flex;flex-wrap:wrap;gap:8px">'+chips+'</div></div>'+teamsHtml;
     }
     return '<div class="pad">'+
-    '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Crea un torneo: eliminazione diretta a coppie fisse, all\'americana con partner a rotazione, o Baraonda — coppie sorteggiate a caso a ogni turno.</div>'+
+    '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Crea un torneo: eliminazione diretta, all\'americana con partner a rotazione, o Baraonda — coppie sorteggiate a caso a ogni turno.</div>'+
     '<div><div class="kick" style="margin-bottom:10px">Formato</div><div style="display:flex;gap:8px">'+types+'</div></div>'+
     '<div><div class="kick" style="margin-bottom:10px">Partecipanti</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+genders+'</div></div>'+
     pairModeHtml+courtsHtml+durHtml+sizeHtml+pickerHtml+builderHtml+
     '<div class="tapmute" onclick="A.createTournament()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
-    'text-align:center;font-weight:700;font-size:16px">Crea torneo</div></div>';
+    'text-align:center;font-weight:700;font-size:16px">'+
+    (S.tourType==="baraonda"?"Sorteggia le coppie":"Crea torneo")+'</div></div>';
   }
   if(S.tournament.type==="baraonda"){
     function sameTeam(t1,t2){return t1&&t2&&t1.join(",")===t2.join(",")}
