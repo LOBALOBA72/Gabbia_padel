@@ -1389,7 +1389,11 @@ function me(){
      su tutti gli schermi più larghi di ~375px. */
   var photoStyle=meP.photo?"background-image:url('"+meP.photo+"');background-size:100% auto;background-repeat:no-repeat;background-position:center top;background-color:#0F1620":
     "background:linear-gradient(160deg,#1A2432,#0B1118)";
-  var hero='<div style="position:relative;height:280px;margin:0 -20px;'+photoStyle+'">'+
+  /* stessa forma della card "Penitenza pendente" in Gabbia: angoli 16px e bordo
+     arancione. Non è più a tutta larghezza dello schermo: sta dentro il padding,
+     altrimenti gli angoli arrotondati non si vedrebbero. */
+  var hero='<div style="position:relative;height:280px;border-radius:16px;overflow:hidden;'+
+    'border:1px solid rgba(255,106,53,.3);'+photoStyle+'">'+
     '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,17,24,.15) 0%,rgba(11,17,24,.35) 45%,rgba(11,17,24,.96) 100%)"></div>'+
     /* niente più ⇄ né 📷 sulla foto: si cambia giocatore e foto da "Modifica profilo".
        Il segnaposto qui sotto resta perché è l'invito a caricare la prima foto. */
@@ -1399,7 +1403,7 @@ function me(){
     'display:grid;place-items:center;font-size:22px;color:#8C99A8">+</div>'+
     '<div style="font-size:12px;color:#8C99A8">Aggiungi foto profilo</div>'+
     '<input type="file" accept="image/*" onchange="A.setPhoto(this)" style="display:none"></label>':"")+
-    '<div style="position:absolute;left:20px;right:20px;bottom:18px">'+
+    '<div style="position:absolute;left:16px;right:16px;bottom:16px">'+
     '<div style="display:flex;gap:6px;margin-bottom:10px">'+
     '<div class="tag" style="display:inline-flex;align-items:center;gap:6px;background:rgba(200,255,61,.14);'+
     'border:0.5px solid rgba(200,255,61,.4);border-radius:20px;padding:5px 12px 5px 6px">'+
@@ -1413,7 +1417,7 @@ function me(){
       'style="font-size:26px;line-height:1;flex-shrink:0">'+flagOf(meP.nationality)+'</span>':'')+
     '<span style="font-size:20px;color:#8C99A8;line-height:1.2">'+esc(meP.name)+'</span>'+
     '</div></div></div>';
-  return '<div class="pad" style="padding-top:0;gap:20px">'+hero+
+  return '<div class="pad" style="gap:20px">'+hero+
   '<div style="display:flex;gap:12px">'+
   '<div class="tapmute" onclick="A.startEditProfile()" style="flex:1;display:flex;align-items:center;justify-content:center;'+
   'background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:13px;color:#FFFFFF;'+
