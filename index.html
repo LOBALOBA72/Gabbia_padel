@@ -517,8 +517,9 @@ var A={
         alert("Il soprannome \""+nuovo+"\" è già di un altro giocatore.");return;
       }
       var quante=S.matches.concat(S.history).filter(function(m){return matchHasNick(m,p.nick)}).length;
-      if(!confirm("Rinominare \""+p.nick+"\" in \""+nuovo+"\"?\n\nVerrà aggiornato ovunque: "+
-        quante+" partite, penitenze e tabellone del torneo."))return;
+      if(!confirm("Rinominare \""+p.nick+"\" in \""+nuovo+"\"?\n\n"+
+        "Il nuovo soprannome verrà scritto anche nelle "+quante+" partite in cui compare, "+
+        "nelle penitenze e nel tabellone.\n\nTocca OK per confermare."))return;
     }
     var patch={name:S.name.trim()||"—",gender:S.gender,
       nationality:S.nationality||"",elo:parseInt(S.elo,10)||p.elo};
@@ -1263,8 +1264,10 @@ function adminEditScreen(){
   '<div><div class="kick" style="margin-bottom:6px">Genere</div><div style="display:flex;gap:8px">'+gender+'</div></div>'+
   countryField(S.nationality)+
   campo("Punti ELO","elo","1500","number")+
+  /* il bottone diceva "Salva IL PUMA" anche dopo aver scritto il nuovo soprannome:
+     sembrava che stesse per salvare quello vecchio */
   '<div class="tapmute" onclick="A.saveAdminEdit()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
-  'text-align:center;font-weight:700;font-size:16px;margin-top:8px">Salva '+esc(p.nick)+'</div>'+
+  'text-align:center;font-weight:700;font-size:16px;margin-top:8px">Salva modifiche</div>'+
   '<div class="tapmute" onclick="A.cancelAdminEdit()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div>'+
   '<div class="tapmute" onclick="A.remove(\''+js(p.nick)+'\')" style="text-align:center;font-size:12px;color:#FF6A35;padding:8px">'+
   'Elimina '+esc(p.nick)+' dalla Gabbia</div></div>';
