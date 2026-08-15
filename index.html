@@ -60,6 +60,32 @@ pairs:["Coppie","bilanciate a ELO"],rank:["Classifica","punti ELO"],
 me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],tour:["Torneo","tabellone a eliminazione"],
 stats:["Statistiche","i tuoi numeri"]};
 
+/* Nazionalità: si salva il codice ISO a 2 lettere, la bandiera si ricava da quello
+   (due "regional indicator" unicode) — così non serve nessuna tabella di emoji.
+   Su Windows le bandiere non vengono disegnate e si vede il codice: sui telefoni sì. */
+var COUNTRIES=[["IT","Italia"],["AR","Argentina"],["ES","Spagna"],["BR","Brasile"],
+["FR","Francia"],["DE","Germania"],["GB","Regno Unito"],["PT","Portogallo"],["NL","Paesi Bassi"],
+["BE","Belgio"],["CH","Svizzera"],["AT","Austria"],["SE","Svezia"],["NO","Norvegia"],["DK","Danimarca"],
+["FI","Finlandia"],["IE","Irlanda"],["PL","Polonia"],["RO","Romania"],["BG","Bulgaria"],["HU","Ungheria"],
+["CZ","Rep. Ceca"],["SK","Slovacchia"],["SI","Slovenia"],["HR","Croazia"],["RS","Serbia"],["BA","Bosnia"],
+["AL","Albania"],["GR","Grecia"],["UA","Ucraina"],["RU","Russia"],["MD","Moldavia"],["LT","Lituania"],
+["LV","Lettonia"],["EE","Estonia"],["TR","Turchia"],["MA","Marocco"],["TN","Tunisia"],["EG","Egitto"],
+["DZ","Algeria"],["SN","Senegal"],["NG","Nigeria"],["GH","Ghana"],["CI","Costa d'Avorio"],["ZA","Sudafrica"],
+["US","Stati Uniti"],["CA","Canada"],["MX","Messico"],["CO","Colombia"],["VE","Venezuela"],["PE","Perù"],
+["CL","Cile"],["UY","Uruguay"],["PY","Paraguay"],["EC","Ecuador"],["BO","Bolivia"],["CU","Cuba"],
+["DO","Rep. Dominicana"],["CN","Cina"],["JP","Giappone"],["KR","Corea del Sud"],["IN","India"],
+["PK","Pakistan"],["BD","Bangladesh"],["PH","Filippine"],["ID","Indonesia"],["TH","Thailandia"],
+["VN","Vietnam"],["IL","Israele"],["LB","Libano"],["AU","Australia"],["NZ","Nuova Zelanda"]];
+function flagOf(code){
+  if(!code||String(code).length!==2)return "";
+  return String.fromCodePoint.apply(null,String(code).toUpperCase().split("").map(function(c){
+    return 0x1F1E6+c.charCodeAt(0)-65}));
+}
+function countryName(code){
+  var c=COUNTRIES.filter(function(x){return x[0]===code})[0];
+  return c?c[1]:"";
+}
+
 var S=null;
 try{S=JSON.parse(localStorage.getItem("gabbia.v2"))}catch(e){}
 if(!S||!S.roster)S={screen:"home",day:(new Date().getDay()+6)%7,slot:"21:00",court:1,pairSeed:0,
@@ -78,6 +104,7 @@ if(typeof S.me==="undefined")S.me=null;
 if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
+if(typeof S.nationality==="undefined")S.nationality="";
 if(typeof S.tournament==="undefined")S.tournament=null;
 if(S.tournament&&S.tournament.rounds&&S.tournament.rounds[0]&&S.tournament.rounds[0][0]&&
   S.tournament.rounds[0][0].a!==null&&!Array.isArray(S.tournament.rounds[0][0].a)){S.tournament=null;}
@@ -142,6 +169,7 @@ var sb=window.supabase?window.supabase.createClient(SB_URL,SB_KEY):null;
 function parseRecord(rec){var m=(rec||"0V · 0S").match(/\d+/g)||[0,0];return{wins:+m[0],losses:+m[1]}}
 function applyPlayers(rows){
   S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,photo:r.photo||null,
+    nationality:r.nationality||"",
     record:(r.wins||0)+"V · "+(r.losses||0)+"S",delta:r.last_delta||""}}).sort(function(a,b){return b.elo-a.elo});
   upgradeMeToId();
   save();
@@ -296,18 +324,28 @@ var A={
       alert("Il soprannome \""+nick+"\" è già preso. Scegline un altro.");return;
     }
     var np={nick:nick,name:S.name.trim()||"—",
-      elo:parseInt(S.elo,10)||1500,record:"0V · 0S",delta:"nuovo",gender:S.gender};
+      elo:parseInt(S.elo,10)||1500,record:"0V · 0S",delta:"nuovo",gender:S.gender,
+      nationality:S.nationality||""};
     S.roster=S.roster.concat([np]).sort(function(a,b){return b.elo-a.elo});
     var wasSignup=S.addAsMe;
     if(wasSignup)S.me=np.nick; /* provvisorio: sostituito dall'id vero appena Supabase risponde */
-    S.addAsMe=false;S.nick="";S.name="";S.elo="1500";S.gender="M";S.screen=wasSignup?"home":"rank";save();render();
-    if(sb)sb.from("players").insert([{nick:np.nick,name:np.name,elo:np.elo,gender:np.gender,wins:0,losses:0,last_delta:"nuovo"}])
-      .select().then(function(res){
+    S.addAsMe=false;S.nick="";S.name="";S.elo="1500";S.gender="M";S.nationality="";
+    S.screen=wasSignup?"home":"rank";save();render();
+    if(sb){
+      var base={nick:np.nick,name:np.name,elo:np.elo,gender:np.gender,wins:0,losses:0,last_delta:"nuovo"};
+      var fatto=function(res){
         if(res.error||!res.data||!res.data[0])return;
         np.id=res.data[0].id;
         if(wasSignup){S.me=np.id;}
         save();render();
-      });
+      };
+      /* se la colonna nationality non esiste ancora, si reinserisce senza */
+      sb.from("players").insert([Object.assign({},base,{nationality:np.nationality})]).select()
+        .then(function(res){
+          if(res.error)sb.from("players").insert([base]).select().then(fatto);
+          else fatto(res);
+        });
+    }
   },
   startSignup:function(){S.addAsMe=true;S.screen="add";save();render();},
   cancelAdd:function(){var wasSignup=S.addAsMe;S.addAsMe=false;S.screen=wasSignup?"me":"rank";save();render();},
@@ -350,16 +388,20 @@ var A={
   startEditProfile:function(){
     var meP=myPlayer();
     if(!meP)return;
-    S.name=meP.name==='—'?'':meP.name;S.gender=meP.gender||'M';S.screen='editme';save();render();
+    S.name=meP.name==='—'?'':meP.name;S.gender=meP.gender||'M';
+    S.nationality=meP.nationality||'';S.screen='editme';save();render();
   },
   saveProfile:function(){
     var meP=myPlayer();if(!meP)return;
-    var newName=S.name.trim()||'—';
-    S.roster=S.roster.map(function(r){return isMe(r)?Object.assign({},r,{name:newName,gender:S.gender}):r;});
+    var newName=S.name.trim()||'—',naz=S.nationality||'';
+    S.roster=S.roster.map(function(r){return isMe(r)?Object.assign({},r,{name:newName,gender:S.gender,nationality:naz}):r;});
     S.screen='me';save();render();
     if(sb){
-      var q=sb.from('players').update({name:newName,gender:S.gender});
-      (meP.id?q.eq('id',meP.id):q.eq('nick',meP.nick)).then(function(){});
+      var dove=function(q){return meP.id?q.eq('id',meP.id):q.eq('nick',meP.nick)};
+      /* se la colonna nationality non esiste ancora, si salvano almeno nome e genere */
+      dove(sb.from('players').update({name:newName,gender:S.gender,nationality:naz})).then(function(res){
+        if(res&&res.error)dove(sb.from('players').update({name:newName,gender:S.gender})).then(function(){});
+      });
     }
   },
   pickGender:function(g){S.gender=g;save();render()},
@@ -890,7 +932,8 @@ function rank(){
     (me?"rgba(200,255,61,.07)":"#141E2A")+';border:1px solid '+
     (me?"rgba(200,255,61,.35)":"rgba(255,255,255,.08)")+';border-radius:12px;padding:12px 13px">'+
     '<div class="anton" style="width:24px;font-size:18px;color:#8C99A8">'+(i+1)+'</div>'+
-    '<div style="flex:1"><div style="font-size:15px;font-weight:700">'+esc(r.nick)+'</div>'+
+    '<div style="flex:1"><div style="font-size:15px;font-weight:700">'+
+    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+'</div>'+
     '<div style="font-size:11px;color:#8C99A8">'+esc(r.record)+'</div></div>'+
     '<div style="text-align:right"><div style="font-size:15px;font-weight:700">'+r.elo+'</div>'+
     '<div style="font-size:11px;color:'+dc+'">'+esc(r.delta)+'</div></div>'+
@@ -924,26 +967,59 @@ function addScreen(){
   f("Soprannome","nick","es. Tornado")+f("Nome e cognome","name","es. Luca Bianchi")+
   f("ELO di partenza","elo","1500","number")+
   '<div><div class="kick" style="margin-bottom:6px">Genere</div><div style="display:flex;gap:8px">'+gender+'</div></div>'+
+  countryField(S.nationality)+
   '<div class="tapmute" onclick="A.add()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
   'text-align:center;font-weight:700;font-size:16px;margin-top:8px">'+(S.addAsMe?"Iscriviti alla Gabbia":"Iscrivi alla Gabbia")+'</div>'+
   '<div class="tapmute" onclick="A.cancelAdd()" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div></div>';
 }
 
+/* menu a tendina nativo: su telefono apre il selettore di sistema, comodo con 70 voci */
+function countryField(current){
+  var opts=COUNTRIES.map(function(c){
+    return '<option value="'+c[0]+'"'+(c[0]===current?' selected':'')+'>'+
+      flagOf(c[0])+'  '+esc(c[1])+'</option>';
+  }).join("");
+  return '<div><div class="kick" style="margin-bottom:6px">Nazionalità</div>'+
+  '<select onchange="A.field(\'nationality\',this.value);render()" '+
+  'style="width:100%;background:#141E2A;border:1px solid rgba(255,255,255,.16);border-radius:12px;'+
+  'padding:15px;color:#FFFFFF;font-size:16px;font-family:inherit">'+
+  '<option value=""'+(!current?' selected':'')+'>Non indicata</option>'+opts+'</select></div>';
+}
 function editProfileScreen(){
   var meP=myPlayer()||{nick:"—"};
   var gender=[["M","Maschio"],["F","Femmina"]].map(function(g){var on=S.gender===g[0];
     return '<div class="tapmute" onclick="A.pickGender(\''+g[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
     'padding:14px 0;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
     ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:14px">'+g[1]+'</div>'}).join("");
+  /* anteprima + caricamento foto: prima stavano sull'icona 📷 sopra la foto */
+  var anteprima=meP.photo?
+    '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;background-image:url(\''+meP.photo+'\');'+
+    'background-size:cover;background-position:center top;background-color:#0F1620"></div>':
+    '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;border:1.5px dashed #26313F;'+
+    'display:grid;place-items:center;font-size:22px;color:#8C99A8">+</div>';
+  var fotoRow='<div><div class="kick" style="margin-bottom:6px">Foto profilo</div>'+
+    '<label style="display:flex;align-items:center;gap:14px;background:#141E2A;border:0.5px solid #26313F;'+
+    'border-radius:12px;padding:12px;cursor:pointer">'+anteprima+
+    '<div style="flex:1;min-width:0">'+
+    '<div style="font-size:15px;font-weight:600;color:#FFFFFF">'+(meP.photo?"Cambia foto":"Aggiungi una foto")+'</div>'+
+    '<div style="font-size:11px;color:#8C99A8;line-height:1.4">Meglio orizzontale, dalla vita in su. Viene ridotta in automatico.</div></div>'+
+    '<div style="font-size:18px;color:#C8FF3D;flex-shrink:0">›</div>'+
+    '<input type="file" accept="image/*" onchange="A.setPhoto(this)" style="display:none"></label></div>';
   return '<div class="pad" style="gap:16px">'+
-  '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Il soprannome ("'+esc(meP.nick)+'") non si può cambiare qui perché è legato alle tue partite — chiedi all\'amministratore per quello. Puoi aggiornare nome e genere.</div>'+
+  '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Il soprannome ("'+esc(meP.nick)+'") non si può cambiare qui perché è legato alle tue partite — chiedi all\'amministratore per quello. Puoi aggiornare foto, nome e genere.</div>'+
+  fotoRow+
   '<div><div class="kick" style="margin-bottom:6px">Nome e cognome</div>'+
   '<input value="'+esc(S.name)+'" oninput="A.field(\'name\',this.value)" placeholder="es. Luca Bianchi" '+
   'style="width:100%;background:#141E2A;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:15px;color:#FFFFFF;font-size:16px"></div>'+
   '<div><div class="kick" style="margin-bottom:6px">Genere</div><div style="display:flex;gap:8px">'+gender+'</div></div>'+
+  countryField(S.nationality)+
   '<div class="tapmute" onclick="A.saveProfile()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
   'text-align:center;font-weight:700;font-size:16px;margin-top:8px">Salva modifiche</div>'+
-  '<div class="tapmute" onclick="A.nav(\'me\')" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div></div>';
+  '<div class="tapmute" onclick="A.nav(\'me\')" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div>'+
+  /* via di uscita: senza il vecchio ⇄ sulla foto, chi sbaglia a scegliersi
+     al primo avvio resterebbe bloccato per sempre nel profilo di un altro */
+  '<div class="tapmute" onclick="A.changeMe()" style="text-align:center;font-size:12px;color:#5A6B7D;padding:8px">'+
+  'Non sei '+esc(meP.nick)+'? Scegli un altro giocatore</div></div>';
 }
 function mePicker(){
   var rows=S.roster.map(function(r){return '<div class="tapmute" onclick="A.pickMe(\''+js(r.id||r.nick)+'\')" '+
@@ -1035,12 +1111,8 @@ function me(){
     "background:linear-gradient(160deg,#1A2432,#0B1118)";
   var hero='<div style="position:relative;height:280px;margin:0 -20px;'+photoStyle+'">'+
     '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,17,24,.15) 0%,rgba(11,17,24,.35) 45%,rgba(11,17,24,.96) 100%)"></div>'+
-    '<div style="position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:20px;right:20px;display:flex;justify-content:space-between">'+
-    '<div class="tapmute" onclick="A.changeMe()" style="width:34px;height:34px;border-radius:50%;background:rgba(11,17,24,.55);'+
-    'backdrop-filter:blur(6px);border:0.5px solid #26313F;display:grid;place-items:center;font-size:13px;color:#FFFFFF">⇄</div>'+
-    '<label style="width:34px;height:34px;border-radius:50%;background:rgba(11,17,24,.55);backdrop-filter:blur(6px);'+
-    'border:0.5px solid #26313F;display:grid;place-items:center;font-size:14px;color:#FFFFFF;cursor:pointer">📷'+
-    '<input type="file" accept="image/*" onchange="A.setPhoto(this)" style="display:none"></label></div>'+
+    /* niente più ⇄ né 📷 sulla foto: si cambia giocatore e foto da "Modifica profilo".
+       Il segnaposto qui sotto resta perché è l'invito a caricare la prima foto. */
     (!meP.photo?'<label style="position:absolute;top:0;left:0;right:0;bottom:104px;display:flex;align-items:center;justify-content:center;'+
     'flex-direction:column;gap:8px;cursor:pointer">'+
     '<div style="width:60px;height:60px;border-radius:50%;border:1.5px dashed #26313F;'+
@@ -1053,11 +1125,12 @@ function me(){
     'border:0.5px solid rgba(200,255,61,.4);border-radius:20px;padding:5px 12px 5px 6px">'+
     '<div style="width:20px;height:20px;border-radius:50%;background:#C8FF3D;color:#0B1118;display:grid;place-items:center;'+
     'font-size:10px;font-weight:600">'+(rankPos===1?"👑":"#"+rankPos)+'</div>'+
-    '<div style="font-size:11px;font-weight:600;color:#C8FF3D">'+rankLabel+'</div></div>'+
-    '<div style="display:inline-flex;align-items:center;background:rgba(11,17,24,.6);border:0.5px solid #26313F;border-radius:20px;padding:6px 12px;'+
-    'font-size:11px;font-weight:600;color:#FFFFFF">'+meP.elo+' ELO</div></div>'+
+    '<div style="font-size:11px;font-weight:600;color:#C8FF3D">'+rankLabel+'</div></div></div>'+
+    /* il pill con l'ELO non serve: è già nel badge in alto nell'header */
     '<div style="font-size:40px;font-weight:600;line-height:1;letter-spacing:-0.5px;color:#FFFFFF;text-shadow:0 2px 12px rgba(0,0,0,.5)">'+esc(meP.nick)+'</div>'+
-    '<div style="font-size:13px;color:#8C99A8;margin-top:4px">'+esc(meP.name)+'</div></div></div>';
+    '<div style="font-size:13px;color:#8C99A8;margin-top:4px">'+
+    (meP.nationality?'<span title="'+esc(countryName(meP.nationality))+'">'+flagOf(meP.nationality)+'</span> ':'')+
+    esc(meP.name)+'</div></div></div>';
   return '<div class="pad" style="padding-top:0;gap:20px">'+hero+
   '<div style="display:flex;gap:12px">'+
   '<div class="tapmute" onclick="A.startEditProfile()" style="flex:1;display:flex;align-items:center;justify-content:center;'+
