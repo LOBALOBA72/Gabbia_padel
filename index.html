@@ -108,6 +108,8 @@ if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
 if(typeof S.pairCombo==="undefined")S.pairCombo=null;
 if(!S.tourGironi)S.tourGironi=2;
+if(!S.torneiPassati)S.torneiPassati=[];
+if(typeof S.adminCode==="undefined")S.adminCode="";
 if(typeof S.adminTarget==="undefined")S.adminTarget=null;
 if(typeof S.adminNick==="undefined")S.adminNick="";
 if(typeof S.nationality==="undefined")S.nationality="";
@@ -124,11 +126,7 @@ if(!S.tourCourts)S.tourCourts=2;
 if(typeof S.tourDuration==="undefined")S.tourDuration=null;
 /* le foto non finiscono in localStorage: con 40 giocatori sforerebbero la quota
    e farebbero fallire in silenzio il salvataggio di tutto il resto. Arrivano da Supabase. */
-function save(){try{
-  var light=Object.assign({},S,{roster:S.roster.map(function(p){
-    return p.photo?Object.assign({},p,{photo:null}):p})});
-  localStorage.setItem("gabbia.v2",JSON.stringify(light));
-}catch(e){}}
+function save(){try{localStorage.setItem("gabbia.v2",JSON.stringify(S))}catch(e){}}
 function set(k,v){S[k]=v;save();render()}
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
   .replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
@@ -145,6 +143,64 @@ function myPlayer(){
   return S.roster.filter(function(p){return p.nick===S.me})[0]||null;
 }
 function isMe(p){var m=myPlayer();return !!m&&!!p&&m.nick===p.nick}
+
+/* ---- foto: caricate a richiesta, non con l'elenco giocatori ----
+   L'elenco veniva riscaricato intero a ogni modifica di un giocatore, foto comprese:
+   con 25 iscritti e un risultato da registrare (4 ELO aggiornati) erano megabyte di
+   traffico per ogni telefono collegato. Ora l'elenco viaggia senza foto, e le foto si
+   chiedono solo per i giocatori davvero mostrati sullo schermo. Restano in memoria,
+   non in localStorage: pesano troppo e le riprendiamo dal server a ogni avvio. */
+var FOTO={},FOTO_INCORSO={},FOTO_DA_CHIEDERE=[];
+function fotoDi(nick){
+  if(!nick)return null;
+  if(nick in FOTO)return FOTO[nick];
+  if(FOTO_DA_CHIEDERE.indexOf(nick)===-1)FOTO_DA_CHIEDERE.push(nick);
+  return null;
+}
+function chiediFotoMancanti(){
+  if(!sb||!FOTO_DA_CHIEDERE.length)return;
+  var da=FOTO_DA_CHIEDERE.filter(function(n){return !FOTO_INCORSO[n]&&!(n in FOTO)});
+  FOTO_DA_CHIEDERE=[];
+  if(!da.length)return;
+  da.forEach(function(n){FOTO_INCORSO[n]=true});
+  sb.from("players").select("nick,photo").in("nick",da).then(function(res){
+    da.forEach(function(n){delete FOTO_INCORSO[n]});
+    if(res.error)return;
+    (res.data||[]).forEach(function(r){FOTO[r.nick]=r.photo||null});
+    da.forEach(function(n){if(!(n in FOTO))FOTO[n]=null});
+    render();
+  });
+}
+/* ---- link personale ----
+   Ogni giocatore ha un codice; il suo link è .../#c=CODICE. Aprendolo si entra come
+   quel giocatore e basta: niente elenco da cui scegliere, quindi nessuno può presentarsi
+   come un altro. CODICI_ATTIVI resta null finché non si sa se la colonna esiste: se la
+   migrazione non è stata eseguita si torna al vecchio elenco, per non chiudere fuori
+   tutti. Il link è la chiave: chi lo gira ad altri regala la propria identità. */
+var CODICI_ATTIVI=null;
+function nuovoCodice(){
+  var c="abcdefghijkmnopqrstuvwxyz23456789",s="";
+  for(var i=0;i<8;i++)s+=c.charAt(Math.floor(Math.random()*c.length));
+  return s;
+}
+function linkDi(codice){
+  return location.origin+location.pathname+"#c="+codice;
+}
+function codiceDaUrl(){
+  var m=String(location.hash||"").match(/[#&]c=([A-Za-z0-9_-]+)/);
+  return m?m[1]:null;
+}
+async function entraConCodice(){
+  var code=codiceDaUrl();
+  if(!code||!sb)return false;
+  var res=await sb.from("players").select("id,nick").eq("access_code",code).limit(1);
+  if(res.error||!res.data||!res.data[0])return false;
+  S.me=res.data[0].id;save();
+  /* via il codice dalla barra degli indirizzi, così non finisce in cronologia
+     né viene condiviso per sbaglio insieme a uno screenshot */
+  try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
+  return true;
+}
 /* amministratore: chi ha il flag is_admin sul proprio profilo (oggi solo MASSICCIO),
    oppure chi ha sbloccato con il PIN — tenuto come riserva */
 function isAdminUser(){
@@ -182,7 +238,7 @@ var sb=window.supabase?window.supabase.createClient(SB_URL,SB_KEY):null;
 
 function parseRecord(rec){var m=(rec||"0V · 0S").match(/\d+/g)||[0,0];return{wins:+m[0],losses:+m[1]}}
 function applyPlayers(rows){
-  S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,photo:r.photo||null,
+  S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,
     nationality:r.nationality||"",isAdmin:r.is_admin===true,
     record:(r.wins||0)+"V · "+(r.losses||0)+"S",delta:r.last_delta||""}}).sort(function(a,b){return b.elo-a.elo});
   upgradeMeToId();
@@ -215,15 +271,24 @@ function applyTournaments(rows){
     courts:live.courts||2,duration:live.duration_min,champion:champion};
   save();
 }
+/* albo d'oro: tutti i tornei conclusi di cui si conosce il vincitore */
+function applyStorico(rows){
+  S.torneiPassati=(rows||[]).filter(function(r){return r.status!=="active"&&campioneDi(r)})
+    .map(function(r){return{id:r.id,type:r.type,quando:r.created_at,campione:campioneDi(r)}})
+    .sort(function(a,b){return a.quando<b.quando?1:-1});
+  save();
+}
 async function refetch(table){
   if(!sb)return;
   var col=table==="players"?"elo":"created_at",asc=table!=="players";
-  var res=await sb.from(table).select("*").order(col,{ascending:asc});
+  /* i giocatori si scaricano SENZA foto: quelle arrivano a richiesta da chiediFotoMancanti() */
+  var campi=table==="players"?"id,nick,name,elo,gender,wins,losses,last_delta,nationality,is_admin":"*";
+  var res=await sb.from(table).select(campi).order(col,{ascending:asc});
   if(res.error)return;
   if(table==="players")applyPlayers(res.data);
   if(table==="matches")applyMatches(res.data);
   if(table==="penalties")applyPenalties(res.data);
-  if(table==="tournaments")applyTournaments(res.data);
+  if(table==="tournaments"){applyTournaments(res.data);applyStorico(res.data)}
   render();
 }
 /* rimanda al server lo stato del tabellone (solo per i tornei salvati su Supabase) */
@@ -247,17 +312,63 @@ function startTournament(t){
     });
   });
 }
+/* Chi ha vinto: si ricava dal tabellone, senza colonne aggiuntive.
+   Per eliminazione, gironi e baraonda è il vincitore dell'ultima partita rimasta;
+   per l'americana è chi guida la classifica, ma solo a torneo completo. */
+function campioneDi(t){
+  var rounds=t.rounds||[];
+  if(!rounds.length)return null;
+  if(t.type==="americano"){
+    var completo=rounds.every(function(r){return (r||[]).every(function(m){return m&&m.winner})});
+    if(!completo)return null;
+    var pts={};
+    rounds.forEach(function(round){round.forEach(function(m){
+      var w=m.winner==="a"?m.a:m.winner==="b"?m.b:null;
+      var l=m.winner==="a"?m.b:m.winner==="b"?m.a:null;
+      if(w)w.forEach(function(n){pts[n]=(pts[n]||0)+1});
+      if(l)l.forEach(function(n){pts[n]=pts[n]||0});
+    })});
+    var ord=Object.keys(pts).sort(function(a,b){return pts[b]-pts[a]});
+    return ord.length?ord[0]:null;
+  }
+  /* il torneo è finito solo se l'ultimo turno è arrivato a UNA sola partita — la
+     finale — e quella ha un esito. Con più partite nell'ultimo turno si sta ancora
+     giocando: prendere il vincitore della prima darebbe un campione inventato. */
+  var ultimo=rounds[rounds.length-1];
+  if(ultimo&&ultimo.length===1&&ultimo[0]&&ultimo[0].winner)return ultimo[0].winner.join(" / ");
+  return null;
+}
+/* Pulizia: si conserva ciò che ha un vincitore, il resto se ne va.
+   Restano quindi solo i tornei arrivati in fondo — quelli dell'albo d'oro. Spariscono
+   sia quelli creati e mai iniziati, sia quelli lasciati a metà: entrambi, "alla fine,
+   non si sono svolti". I tornei in corso (`active`) non vengono mai toccati, e la
+   finestra di 24 ore protegge quelli appena chiusi. */
+function pulisciTorneiChiusi(rows){
+  if(!sb||!rows)return;
+  var limite=Date.now()-24*3600000;
+  var vecchi=rows.filter(function(r){
+    return r.status!=="active"
+      &&new Date(r.created_at).getTime()<limite
+      &&!campioneDi(r);
+  }).map(function(r){return r.id});
+  if(!vecchi.length)return;
+  sb.from("tournaments").delete().in("id",vecchi).then(function(){});
+}
 async function initSync(){
   if(!sb)return;
   try{
-    var pl=await sb.from("players").select("*");
+    var pl=await sb.from("players").select("id,nick,name,elo,gender,wins,losses,last_delta,nationality,is_admin");
     if(!pl.error)applyPlayers(pl.data);
+    /* i codici NON viaggiano con l'elenco: si controlla solo se la colonna esiste */
+    var probe=await sb.from("players").select("access_code").limit(1);
+    CODICI_ATTIVI=!probe.error;
+    if(CODICI_ATTIVI)await entraConCodice();
     var mt=await sb.from("matches").select("*").order("created_at");
     if(!mt.error)applyMatches(mt.data);
     var pn=await sb.from("penalties").select("*").order("created_at");
     if(!pn.error)applyPenalties(pn.data);
     var tn=await sb.from("tournaments").select("*").order("created_at");
-    if(!tn.error)applyTournaments(tn.data);
+    if(!tn.error){applyTournaments(tn.data);applyStorico(tn.data);pulisciTorneiChiusi(tn.data)}
     render();
     sb.channel("gabbia-sync")
       .on("postgres_changes",{event:"*",schema:"public",table:"players"},function(){refetch("players")})
@@ -444,7 +555,7 @@ var A={
     S.addAsMe=false;S.nick="";S.name="";S.elo="1500";S.gender="M";S.nationality="";
     S.screen=wasSignup?"home":"rank";save();render();
     if(sb){
-      var base={nick:np.nick,name:np.name,elo:np.elo,gender:np.gender,wins:0,losses:0,last_delta:"nuovo"};
+      var base={nick:np.nick,name:np.name,elo:np.elo,gender:np.gender,wins:0,losses:0,last_delta:"nuovo",access_code:nuovoCodice()};
       var fatto=function(res){
         if(res.error||!res.data||!res.data[0])return;
         np.id=res.data[0].id;
@@ -495,12 +606,12 @@ var A={
   clearPhoto:function(nick){
     if(!isAdminUser())return;
     var p=S.roster.filter(function(r){return r.nick===nick})[0];
-    if(!p||!p.photo)return;
+    if(!p||!fotoDi(nick))return;
     if(!confirm("Togliere la foto di "+nick+"?"))return;
     A.storePhoto(p,null);
   },
   storePhoto:function(meP,data){
-    S.roster=S.roster.map(function(r){return r.nick===meP.nick?Object.assign({},r,{photo:data}):r});
+    FOTO[meP.nick]=data;
     save();render();
     if(!sb)return;
     var q=sb.from("players").update({photo:data});
@@ -533,10 +644,29 @@ var A={
     if(!isAdminUser())return;
     var p=S.roster.filter(function(r){return r.nick===nick})[0];
     if(!p)return;
-    S.adminTarget=nick;S.adminNick=nick;
+    S.adminTarget=nick;S.adminNick=nick;S.adminCode="";
     S.name=p.name==="—"?"":p.name;S.gender=p.gender||"M";
     S.nationality=p.nationality||"";S.elo=String(p.elo);
     S.screen="admedit";save();render();
+    /* il codice si chiede solo adesso, per questo giocatore: non viaggia mai
+       insieme all'elenco di tutti */
+    if(sb&&p.id)sb.from("players").select("access_code").eq("id",p.id).limit(1).then(function(res){
+      if(res.error||!res.data||!res.data[0])return;
+      var code=res.data[0].access_code;
+      if(!code){
+        code=nuovoCodice();
+        sb.from("players").update({access_code:code}).eq("id",p.id).then(function(){});
+      }
+      S.adminCode=code;save();render();
+    });
+  },
+  copiaLink:function(){
+    if(!S.adminCode)return;
+    var url=linkDi(S.adminCode);
+    var fatto=function(){alert("Link di "+S.adminTarget+" copiato.\n\nIncollalo nella chat con lui.")};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(fatto,function(){prompt("Copia il link:",url)});
+    }else prompt("Copia il link:",url);
   },
   saveAdminEdit:function(){
     if(!isAdminUser())return;
@@ -956,11 +1086,11 @@ function initialsOf(nick){
    Senza foto, le iniziali grandi in lime — stessa altezza, così i due posti restano
    allineati anche se uno dei due non ha ancora caricato niente. */
 function photoBox(nick,h){
-  var p=S.roster.filter(function(r){return r.nick===nick})[0];
+  var foto=fotoDi(nick);
   var alt=h||118;
   var base="width:100%;height:"+alt+"px;border-radius:10px;overflow:hidden;";
-  if(p&&p.photo){
-    return '<div style="'+base+'background-image:url(\''+p.photo+'\');background-size:cover;'+
+  if(foto){
+    return '<div style="'+base+'background-image:url(\''+foto+'\');background-size:cover;'+
     'background-position:center top;background-color:#0F1620;border:1px solid rgba(255,255,255,.14)"></div>';
   }
   /* iniziali proporzionate all'altezza: la stessa funzione serve i riquadri grandi
@@ -1359,8 +1489,9 @@ function countryField(current){
    di un altro giocatore — solo l'amministratore, che può anche toglierla. */
 function fotoField(p,targetNick){
   var altrui=!!targetNick;
-  var anteprima=p.photo?
-    '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;background-image:url(\''+p.photo+'\');'+
+  var foto=fotoDi(p.nick);
+  var anteprima=foto?
+    '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;background-image:url(\''+foto+'\');'+
     'background-size:cover;background-position:center top;background-color:#0F1620"></div>':
     '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;border:1.5px dashed #26313F;'+
     'display:grid;place-items:center;font-size:22px;color:#8C99A8">+</div>';
@@ -1370,12 +1501,12 @@ function fotoField(p,targetNick){
   'border-radius:12px;padding:12px;cursor:pointer">'+anteprima+
   '<div style="flex:1;min-width:0">'+
   '<div style="font-size:15px;font-weight:600;color:#FFFFFF">'+
-  (p.photo?(altrui?"Cambia la foto di "+esc(p.nick):"Cambia foto"):"Aggiungi una foto")+'</div>'+
+  (foto?(altrui?"Cambia la foto di "+esc(p.nick):"Cambia foto"):"Aggiungi una foto")+'</div>'+
   '<div style="font-size:11px;color:#8C99A8;line-height:1.4">Meglio orizzontale, dalla vita in su. '+
   'Viene ridotta in automatico.</div></div>'+
   '<div style="font-size:18px;color:#C8FF3D;flex-shrink:0">›</div>'+
   '<input type="file" accept="image/*" onchange="A.setPhoto('+arg+')" style="display:none"></label>'+
-  ((altrui&&p.photo)?'<div class="tapmute" onclick="A.clearPhoto(\''+js(p.nick)+'\')" '+
+  ((altrui&&foto)?'<div class="tapmute" onclick="A.clearPhoto(\''+js(p.nick)+'\')" '+
   'style="text-align:center;font-size:12px;color:#FF6A35;padding:10px">Togli la foto</div>':'')+'</div>';
 }
 function editProfileScreen(){
@@ -1398,8 +1529,8 @@ function editProfileScreen(){
   '<div class="tapmute" onclick="A.nav(\'me\')" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Annulla</div>'+
   /* via di uscita: senza il vecchio ⇄ sulla foto, chi sbaglia a scegliersi
      al primo avvio resterebbe bloccato per sempre nel profilo di un altro */
-  '<div class="tapmute" onclick="A.changeMe()" style="text-align:center;font-size:12px;color:#5A6B7D;padding:8px">'+
-  'Non sei '+esc(meP.nick)+'? Scegli un altro giocatore</div></div>';
+  (isAdminUser()?'<div class="tapmute" onclick="A.changeMe()" style="text-align:center;font-size:12px;color:#5A6B7D;padding:8px">'+
+  'Non sei '+esc(meP.nick)+'? Scegli un altro giocatore</div>':'')+'</div>';
 }
 /* schermata riservata all'amministratore: modifica il profilo di chiunque */
 function adminEditScreen(){
@@ -1417,6 +1548,21 @@ function adminEditScreen(){
   return '<div class="pad" style="gap:16px">'+
   '<div style="background:rgba(200,255,61,.1);border:1px solid rgba(200,255,61,.3);border-radius:12px;padding:12px 14px;'+
   'font-size:12px;color:#C8FF3D;font-weight:600">Modalità amministratore — stai modificando '+esc(p.nick)+'</div>'+
+  /* il link personale da mandare al giocatore */
+  (CODICI_ATTIVI===false?'':
+   '<div><div class="kick" style="margin-bottom:6px">Link personale</div>'+
+   (S.adminCode?
+     '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:12px">'+
+     '<div style="font-size:12px;color:#C8FF3D;word-break:break-all;line-height:1.5">'+
+     esc(linkDi(S.adminCode))+'</div>'+
+     '<div class="tapmute" onclick="A.copiaLink()" style="margin-top:10px;background:rgba(200,255,61,.14);'+
+     'border:0.5px solid rgba(200,255,61,.4);border-radius:10px;height:44px;display:grid;place-items:center;'+
+     'color:#C8FF3D;font-size:13px;font-weight:700">Copia il link di '+esc(p.nick)+'</div></div>'+
+     '<div style="font-size:11px;color:#8C99A8;line-height:1.5;margin-top:8px">Mandaglielo una volta sola: '+
+     'aprendolo entra come '+esc(p.nick)+' e non vede l\'elenco degli altri. Vale come una chiave, '+
+     'quindi è meglio se non lo gira in giro.</div>':
+     '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:14px;'+
+     'font-size:12px;color:#8C99A8">Sto recuperando il codice…</div>'))+'</div>'+
   fotoField(p,p.nick)+
   campo("Soprannome","adminNick","es. Tornado")+
   '<div style="font-size:12px;color:#8C99A8;line-height:1.5;margin-top:-8px">Cambiandolo verrà riscritto '+
@@ -1440,6 +1586,21 @@ function mePicker(){
     'border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px">'+
     '<div style="font-size:15px;font-weight:700">'+esc(r.nick)+'</div>'+
     '<div style="font-size:13px;color:#C8FF3D;font-weight:700">'+r.elo+'</div></div>'}).join("");
+  /* con i link personali attivi non si sceglie pi\u00f9 dall'elenco: si entra dal proprio
+     link. L'elenco resta solo per l'amministratore che ha sbloccato con il PIN \u2014
+     \u00e8 anche la via di rientro se perde il telefono o svuota la cache. */
+  if(CODICI_ATTIVI&&!S.isAdmin){
+    return '<div class="pad" style="gap:16px">'+
+    '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:16px;padding:20px;'+
+    'text-align:center;line-height:1.6">'+
+    '<div class="anton" style="font-size:22px;color:#C8FF3D;margin-bottom:10px">SERVE IL TUO LINK</div>'+
+    '<div style="font-size:13px;color:#8C99A8">Per entrare nella Gabbia serve il link personale, '+
+    'quello che ti riconosce senza chiederti chi sei.<br><br>Chiedilo a '+
+    esc((S.roster.filter(function(r){return r.isAdmin})[0]||{nick:"chi gestisce l\u2019app"}).nick)+
+    ': te lo manda su WhatsApp e ti basta aprirlo una volta sola.</div></div>'+
+    '<div class="tapmute" onclick="A.tryAdminUnlock()" style="text-align:center;font-size:12px;'+
+    'color:#5A6B7D;padding:10px">Accesso amministratore</div></div>';
+  }
   return '<div class="pad" style="gap:16px">'+
   '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Benvenuto nella Gabbia dei Matti del Padel. Se ti hanno gi\u00e0 iscritto, scegli il tuo nome qui sotto. Altrimenti iscriviti tu.</div>'+
   '<div style="display:flex;flex-direction:column;gap:8px">'+rows+'</div>'+
@@ -1520,7 +1681,8 @@ function me(){
      Se la foto è più alta del riquadro, l'eccedenza esce in basso — dove c'è comunque
      il gradiente scuro con soprannome e badge. Con "contain" restavano bande laterali
      su tutti gli schermi più larghi di ~375px. */
-  var photoStyle=meP.photo?"background-image:url('"+meP.photo+"');background-size:100% auto;background-repeat:no-repeat;background-position:center top;background-color:#0F1620":
+  var miaFoto=fotoDi(meP.nick);
+  var photoStyle=miaFoto?"background-image:url('"+miaFoto+"');background-size:100% auto;background-repeat:no-repeat;background-position:center top;background-color:#0F1620":
     "background:linear-gradient(160deg,#1A2432,#0B1118)";
   /* stessa forma della card "Penitenza pendente" in Gabbia: angoli 16px e bordo
      arancione. Non è più a tutta larghezza dello schermo: sta dentro il padding,
@@ -1534,7 +1696,7 @@ function me(){
     '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,17,24,.15) 0%,rgba(11,17,24,.35) 45%,rgba(11,17,24,.96) 100%)"></div>'+
     /* niente più ⇄ né 📷 sulla foto: si cambia giocatore e foto da "Modifica profilo".
        Il segnaposto qui sotto resta perché è l'invito a caricare la prima foto. */
-    (!meP.photo?'<label style="position:absolute;top:0;left:0;right:0;bottom:104px;display:flex;align-items:center;justify-content:center;'+
+    (!miaFoto?'<label style="position:absolute;top:0;left:0;right:0;bottom:104px;display:flex;align-items:center;justify-content:center;'+
     'flex-direction:column;gap:8px;cursor:pointer">'+
     '<div style="width:60px;height:60px;border-radius:50%;border:1.5px dashed #26313F;'+
     'display:grid;place-items:center;font-size:22px;color:#8C99A8">+</div>'+
@@ -2093,6 +2255,27 @@ function ensureTimerLoop(){
     if(running)render();
   },1000);
 }
+var NOMI_TORNEO={elim:"Eliminazione",gironi:"Gironi",americano:"All'americana",baraonda:"Baraonda"};
+/* albo d'oro: i tornei disputati non si cancellano mai, e li si legge qui */
+function alboDoroHtml(){
+  var st=S.torneiPassati||[];
+  if(!st.length)return '<div><div class="kick" style="margin-bottom:10px">Albo d\'oro</div>'+
+    '<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:12px;'+
+    'padding:16px;text-align:center;font-size:12px;color:#8C99A8;line-height:1.5">'+
+    'Nessun torneo ancora concluso.<br>Chi vince finisce qui, e ci resta.</div></div>';
+  var righe=st.map(function(t){
+    return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
+    'border:0.5px solid #26313F;border-radius:12px;padding:12px 13px">'+
+    '<div style="width:32px;height:32px;border-radius:8px;background:rgba(200,255,61,.14);color:#C8FF3D;'+
+    'display:grid;place-items:center;font-size:14px;font-weight:600;flex-shrink:0">🏆</div>'+
+    '<div style="flex:1;min-width:0">'+
+    '<div style="font-size:15px;font-weight:600;color:#FFFFFF;white-space:nowrap;overflow:hidden;'+
+    'text-overflow:ellipsis">'+esc(t.campione)+'</div>'+
+    '<div style="font-size:11px;color:#8C99A8">'+esc(NOMI_TORNEO[t.type]||t.type)+
+    ' · '+esc(dataBreve(t.quando))+'</div></div></div>'}).join("");
+  return '<div><div class="kick" style="margin-bottom:10px">Albo d\'oro</div>'+
+  '<div style="display:flex;flex-direction:column;gap:8px">'+righe+'</div></div>';
+}
 var LETTERE="ABCDEFGH";
 function tourGironi(){
   var t=S.tournament,rounds=t.rounds,nG=numeroGironi(rounds);
@@ -2278,7 +2461,8 @@ function tour(){
     pairModeHtml+gironiHtml+courtsHtml+durHtml+sizeHtml+pickerHtml+builderHtml+
     '<div class="tapmute" onclick="A.createTournament()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
     'text-align:center;font-weight:700;font-size:16px">'+
-    (S.tourType==="baraonda"?"Sorteggia le coppie":"Crea torneo")+'</div></div>';
+    (S.tourType==="baraonda"?"Sorteggia le coppie":"Crea torneo")+'</div>'+
+    alboDoroHtml()+'</div>';
   }
   if(S.tournament.type==="gironi")return tourGironi();
   if(S.tournament.type==="baraonda"){
@@ -2483,6 +2667,9 @@ function render(){
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
+  /* le schermate appena disegnate hanno segnato di quali foto hanno bisogno:
+     si chiedono adesso, tutte insieme, e solo quelle mancanti */
+  chiediFotoMancanti();
 }
 render();
 initSync();
