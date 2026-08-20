@@ -2671,6 +2671,11 @@ function render(){
      si chiedono adesso, tutte insieme, e solo quelle mancanti */
   chiediFotoMancanti();
 }
+/* se il link viene aperto quando l'app è già in esecuzione cambia solo la parte dopo
+   il #, e lo script non riparte: senza questo, toccare il proprio link non farebbe nulla */
+window.addEventListener("hashchange",function(){
+  if(CODICI_ATTIVI&&codiceDaUrl())entraConCodice().then(function(ok){if(ok)render()});
+});
 render();
 initSync();
 </script>
