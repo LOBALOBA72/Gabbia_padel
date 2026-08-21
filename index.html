@@ -196,9 +196,12 @@ async function entraConCodice(){
   var res=await sb.from("players").select("id,nick").eq("access_code",code).limit(1);
   if(res.error||!res.data||!res.data[0])return false;
   S.me=res.data[0].id;save();
-  /* via il codice dalla barra degli indirizzi, così non finisce in cronologia
-     né viene condiviso per sbaglio insieme a uno screenshot */
-  try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
+  /* il codice RESTA nell'indirizzo, apposta. Toglierlo sembrava più pulito, ma chi
+     salva l'icona in Home Screen dopo aver aperto il link cattura l'indirizzo così
+     com'è in quel momento — e su iPhone quell'icona apre spesso una memoria separata
+     da Safari. Se il codice fosse già sparito, l'icona non saprebbe più chi sei e
+     ricomparirebbe "Serve il tuo link" a ogni apertura. Lasciandolo, ogni apertura
+     dell'icona si riautentica da sola, qualunque sia la memoria che la accoglie. */
   return true;
 }
 /* amministratore: chi ha il flag is_admin sul proprio profilo (oggi solo MASSICCIO),
@@ -2670,12 +2673,3 @@ function render(){
   chiediFotoMancanti();
 }
 /* se il link viene aperto quando l'app è già in esecuzione cambia solo la parte dopo
-   il #, e lo script non riparte: senza questo, toccare il proprio link non farebbe nulla */
-window.addEventListener("hashchange",function(){
-  if(CODICI_ATTIVI&&codiceDaUrl())entraConCodice().then(function(ok){if(ok)render()});
-});
-render();
-initSync();
-</script>
-</body>
-</html>
