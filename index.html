@@ -2803,7 +2803,24 @@ function render(){
   }
   bar.style.display="block";
   var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen,admedit:adminEditScreen}[S.screen]||home;
-  view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
+  try{
+    view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
+  }catch(e){
+    /* uno stato salvato in precedenza (es. un vecchio torneo con una struttura che
+       una funzione più recente non si aspetta) può far fallire il disegno della
+       schermata corrente. Senza questa rete, view.innerHTML non veniva mai scritto:
+       schermo vuoto, senza errori visibili, senza modo di uscirne da soli. Si torna
+       alla Home, che non dipende da nulla di così fragile; se fallisse pure quella,
+       almeno un messaggio invece del nulla. */
+    S.screen="home";save();
+    try{view.innerHTML=header()+'<div class="scroll">'+home()+'</div>';}
+    catch(e2){view.innerHTML='<div class="pad"><div style="background:#141E2A;'+
+      'border:1px solid rgba(255,106,53,.3);border-radius:16px;padding:20px;'+
+      'text-align:center;line-height:1.6">'+
+      '<div style="font-size:15px;font-weight:700;color:#FF6A35;margin-bottom:8px">'+
+      'Qualcosa si è inceppato</div>'+
+      '<div style="font-size:13px;color:#8C99A8">Chiudi e riapri l\'app. Se continua, scrivi a MASSICCIO.</div></div></div>';}
+  }
   writeScroll(view,pos,stessa);
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
