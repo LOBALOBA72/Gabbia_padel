@@ -1199,11 +1199,12 @@ function home(){
       'border-radius:10px;padding:9px 12px;font-size:12px;color:#FF6A35;font-weight:700">In palio: '+esc(m.stake)+'</div>':'')+
       '</div>'}).join("")+'</div>';
   }
-  /* penitenza in sospeso: prima la tua, poi quella del gruppo */
+  /* penitenza in sospeso: solo la tua. Quelle degli altri non compaiono qui —
+     si vedono unicamente dentro il loro profilo. */
   var myn=myNick();
   var pending=S.penalties.filter(function(p){return !p.done});
   var minePen=pending.filter(function(p){return myn&&String(p.who||"").indexOf(myn)!==-1});
-  var pen=minePen[0]||pending[0]||null;
+  var pen=minePen[0]||null;
   var penCard='<div class="tapmute" onclick="A.nav(\'me\')" style="background:#141E2A;border:1px solid '+
     (pen?"rgba(255,106,53,.3)":"rgba(255,255,255,.1)")+';border-radius:16px;padding:14px">'+
     '<div class="kick" style="color:'+(pen?"#FF6A35":"#8C99A8")+'">Penitenza pendente</div>'+
@@ -1669,14 +1670,12 @@ function me(){
     '<div style="flex:1;min-width:0;font-size:15px;font-weight:600;color:'+(d?"#8C99A8":"#FFFFFF")+
     ';text-decoration:'+(d?"line-through":"none")+'">'+esc(p.title)+'</div>'+
     '<div style="font-size:11px;color:#8C99A8;flex-shrink:0">'+esc(p.who||"—")+'</div></div>'};
+  /* solo le tue: quelle degli altri non compaiono in nessun profilo tranne il loro */
   var indexed=S.penalties.map(function(p,i){return{p:p,i:i}});
   var minePens=indexed.filter(function(x){return String(x.p.who||"").indexOf(meP.nick)!==-1});
-  var otherPens=indexed.filter(function(x){return String(x.p.who||"").indexOf(meP.nick)===-1});
   var pens=minePens.length?minePens.map(function(x){return penRow(x.p,x.i)}).join(""):
     '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:16px;'+
     'text-align:center;font-size:12px;color:#8C99A8">Nessuna penitenza a tuo carico.</div>';
-  var othersHtml=otherPens.length?('<div><div style="font-size:15px;font-weight:600;color:#FFFFFF;margin-bottom:12px">Penitenze del gruppo</div>'+
-    '<div style="display:flex;flex-direction:column;gap:8px">'+otherPens.map(function(x){return penRow(x.p,x.i)}).join("")+'</div></div>'):"";
   /* "100% auto" = sempre a tutta larghezza, ancorata in alto: mai bande scure ai lati.
      Se la foto è più alta del riquadro, l'eccedenza esce in basso — dove c'è comunque
      il gradiente scuro con soprannome e badge. Con "contain" restavano bande laterali
@@ -1728,8 +1727,7 @@ function me(){
   '<div><div style="font-size:15px;font-weight:600;color:#FFFFFF;margin-bottom:12px">Bacheca premi</div>'+
   '<div style="display:flex;flex-direction:column;gap:8px">'+awards+'</div></div>'+
   '<div><div style="font-size:15px;font-weight:600;color:#FFFFFF;margin-bottom:12px">Le tue penitenze</div>'+
-  '<div style="display:flex;flex-direction:column;gap:8px">'+pens+'</div></div>'+
-  othersHtml+'</div>';
+  '<div style="display:flex;flex-direction:column;gap:8px">'+pens+'</div></div></div>';
 }
 
 /* ---------- Statistiche giocatore ----------
