@@ -1,0 +1,9 @@
+{
+  "name": "gabbia-padel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serve solo a dare a Vercel la libreria per mandare le notifiche push (api/send-push.js). L'app resta index.html, niente build step.",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
