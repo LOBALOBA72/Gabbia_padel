@@ -269,7 +269,11 @@ async function attivaNotifiche(){
   try{
     var perm=await Notification.requestPermission();
     if(perm!=="granted")return{ok:false,motivo:"Permesso negato. Puoi riattivarlo dalle impostazioni del browser."};
-    var reg=await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.register("/sw.js");
+    /* register() si risolve appena la registrazione parte, non quando il worker è
+       davvero "attivo" — sottoscriversi subito dopo dà "requires an active service
+       worker". .ready aspetta l'attivazione vera, come vuole la sua stessa API. */
+    var reg=await navigator.serviceWorker.ready;
     var sub=await reg.pushManager.subscribe({
       userVisibleOnly:true,
       applicationServerKey:urlB64ToUint8Array(VAPID_PUBLIC_KEY)
