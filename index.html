@@ -499,7 +499,33 @@ function pendingVoters(m){
   return matchNicks(m).filter(function(n){return c[n]!==true});
 }
 function isProposed(m){return !!m.winner&&!m.playedAt}
-/* tocca a me votare? */
+/* squadra (0 o 1) a cui appartiene un nick in questa partita, -1 se non c'è */
+function squadraDi(m,nick){
+  for(var t=0;t<2;t++)if(m.teams[t].players.some(function(p){return p.nick===nick}))return t;
+  return -1;
+}
+/* la squadra avversaria di chi ha proposto: solo loro possono confermare, un
+   compagno di squadra del proponente direbbe sempre di sì e non verifica niente.
+   Se il proponente non si riconosce (es. admin che propone per altri) il vincolo
+   non si applica: chiunque dei quattro può confermare, come prima. */
+function squadraAvversariaProponente(m){
+  var t=squadraDi(m,m.proposedBy);
+  return t===-1?null:1-t;
+}
+function possoConfermare(m,nick){
+  var avv=squadraAvversariaProponente(m);
+  return avv===null||squadraDi(m,nick)===avv;
+}
+/* chi manca perché il risultato si chiuda: solo gli avversari del proponente
+   che non hanno ancora confermato — non i suoi compagni di squadra */
+function avversariMancanti(m){
+  var avv=squadraAvversariaProponente(m);
+  if(avv===null)return pendingVoters(m);
+  var conf=m.confirmations||{};
+  return m.teams[avv].players.map(function(p){return p.nick}).filter(function(n){return conf[n]!==true});
+}
+/* tocca a me votare? (vale per tutti e quattro: anche un compagno di squadra
+   può smentire un punteggio sbagliato, solo non può confermarlo lui) */
 function needsMyVote(m){
   var n=myNick();
   return isProposed(m)&&!!n&&matchNicks(m).indexOf(n)!==-1&&(m.confirmations||{})[n]!==true;
@@ -1080,6 +1106,11 @@ var A={
     var m=S.matches.filter(function(x){return x.id==id})[0];
     if(!m||!isProposed(m))return;
     var io=myNick();if(!io)return;
+    if(ok&&!possoConfermare(m,io)){
+      alert("Solo un avversario di chi ha proposto il risultato può confermarlo — un compagno di squadra no. "+
+        "Puoi comunque smentirlo se non è andata così.");
+      return;
+    }
     if(!ok){
       if(!confirm("Smentire questo risultato? La proposta viene annullata e la partita torna da giocare."))return;
       S.matches=S.matches.map(function(x){return x.id===m.id?
@@ -1089,10 +1120,13 @@ var A={
       return;
     }
     var conf=Object.assign({},m.confirmations||{});conf[io]=true;
-    var restano=matchNicks(m).filter(function(n){return conf[n]!==true});
+    var quanteConferme=Object.keys(conf).filter(function(n){return conf[n]}).length;
     S.matches=S.matches.map(function(x){return x.id===m.id?Object.assign({},x,{confirmations:conf}):x});
     save();render();
-    if(restano.length===0){A.applyResult(m.id,m.winner,m.score);return;}
+    /* basta UNA conferma oltre a quella implicita di chi ha proposto: non serve più
+       il sì di tutti e quattro. Due persone d'accordo (proponente + un confermante)
+       chiudono il risultato. */
+    if(quanteConferme>=2){A.applyResult(m.id,m.winner,m.score);return;}
     if(sb)sb.from("matches").update({confirmations:conf}).eq("id",m.id).then(function(){});
   },
   /* 3) l'amministratore può chiudere senza aspettare tutti */
@@ -1218,25 +1252,31 @@ function confirmBlock(m){
   var wi=m.winner==="b"?1:0;
   var vinc=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
   var pers=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
-  var restano=pendingVoters(m);
+  /* solo la squadra avversaria di chi ha proposto conta ai fini della chiusura:
+     un compagno di squadra direbbe sempre di sì, non è una verifica */
+  var restano=avversariMancanti(m);
   var testa='<div style="margin-top:12px;background:rgba(11,17,24,.6);border:1px solid rgba(255,255,255,.12);'+
     'border-radius:10px;padding:12px">'+
     '<div class="kick" style="margin-bottom:6px">Risultato proposto'+(m.proposedBy?" da "+esc(m.proposedBy):"")+'</div>'+
     '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+esc(vinc)+'</div>'+
     '<div style="font-size:12px;color:#8C99A8;margin-top:2px">batte '+esc(pers)+(m.score?' · '+esc(m.score):'')+'</div>';
   if(needsMyVote(m)){
+    var ioNick=myNick(),possoIo=possoConfermare(m,ioNick);
     return testa+
     '<div style="display:flex;gap:8px;margin-top:12px">'+
-    '<div class="tapmute" onclick="A.confirmResult(\''+esc(String(m.id))+'\',true)" '+
+    (possoIo?'<div class="tapmute" onclick="A.confirmResult(\''+esc(String(m.id))+'\',true)" '+
     'style="flex:1;background:#C8FF3D;color:#0B1118;border-radius:10px;height:44px;display:grid;place-items:center;'+
-    'font-size:13px;font-weight:700">Confermo</div>'+
+    'font-size:13px;font-weight:700">Confermo</div>':'')+
     '<div class="tapmute" onclick="A.confirmResult(\''+esc(String(m.id))+'\',false)" '+
     'style="flex:1;background:rgba(255,106,53,.14);color:#FF6A35;border:1px solid rgba(255,106,53,.35);'+
     'border-radius:10px;height:44px;display:grid;place-items:center;font-size:13px;font-weight:700">Non è andata così</div>'+
-    '</div></div>';
+    '</div>'+
+    (possoIo?'':'<div style="font-size:11px;color:#8C99A8;margin-top:8px">Solo '+esc((restano.join(" o ")))+
+    ' può confermarlo — tu sei nella squadra di chi l\'ha proposto.</div>')+
+    '</div>';
   }
   var attesa='<div style="font-size:11px;color:#8C99A8;margin-top:10px">'+
-    (restano.length?'In attesa della conferma di '+esc(restano.join(", ")):'Tutti hanno confermato')+'</div>';
+    (restano.length?'Basta la conferma di '+esc(restano.join(" o ")):'Confermato')+'</div>';
   var forza=isAdminUser()&&restano.length?
     '<div class="tapmute" onclick="A.forceResult(\''+esc(String(m.id))+'\')" '+
     'style="margin-top:10px;border:1px solid rgba(200,255,61,.4);color:#C8FF3D;border-radius:10px;height:44px;'+
