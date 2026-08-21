@@ -239,6 +239,73 @@ var SB_URL="https://ttshxiiwmnuqdjupcmal.supabase.co";
 var SB_KEY="sb_publishable_U8kxKxd4MVg6Cih2_CqVhg_H1IrofWp";
 var sb=window.supabase?window.supabase.createClient(SB_URL,SB_KEY):null;
 
+/* ---- notifiche push ----
+   La chiave pubblica non è un segreto (è fatta apposta per stare nel codice del
+   browser): serve solo ad "abbonare" il dispositivo. Chi manda davvero gli avvisi
+   è api/send-push.js su Vercel, l'unico posto che tiene la chiave privata. */
+var VAPID_PUBLIC_KEY="BKsMo1gsg77-QnRX0wWixNECxCTsIAus-iAeEbqZczxzZ059T7zdw3FtUyDgQKoGWFGUg3CCAAsdsjkPM_yru9M";
+function pushSupportata(){
+  return "serviceWorker" in navigator && "PushManager" in window && window.isSecureContext;
+}
+function urlB64ToUint8Array(base64String){
+  var padding="=".repeat((4-base64String.length%4)%4);
+  var base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
+  var raw=atob(base64),out=new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+async function statoNotifiche(){
+  if(!pushSupportata())return "non-supportate";
+  if(Notification.permission==="denied")return "negate";
+  try{
+    var reg=await navigator.serviceWorker.getRegistration();
+    var sub=reg?await reg.pushManager.getSubscription():null;
+    return sub?"attive":"spente";
+  }catch(e){return "spente"}
+}
+async function attivaNotifiche(){
+  if(!pushSupportata()||!sb)return{ok:false,motivo:"Il tuo browser non supporta le notifiche, oppure l'app non è aperta su una pagina sicura (https)."};
+  var meP=myPlayer();if(!meP)return{ok:false,motivo:"Nessuna identità."};
+  try{
+    var perm=await Notification.requestPermission();
+    if(perm!=="granted")return{ok:false,motivo:"Permesso negato. Puoi riattivarlo dalle impostazioni del browser."};
+    var reg=await navigator.serviceWorker.register("/sw.js");
+    var sub=await reg.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:urlB64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+    var j=sub.toJSON();
+    var res=await sb.from("push_subscriptions").upsert({
+      player_id:meP.id,endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth
+    },{onConflict:"endpoint"});
+    if(res.error)return{ok:false,motivo:"Iscrizione creata ma non salvata: "+res.error.message};
+    return{ok:true};
+  }catch(e){return{ok:false,motivo:"Non è stato possibile attivarle: "+(e&&e.message||e)}}
+}
+async function disattivaNotifiche(){
+  try{
+    var reg=await navigator.serviceWorker.getRegistration();
+    var sub=reg?await reg.pushManager.getSubscription():null;
+    if(sub){
+      if(sb)await sb.from("push_subscriptions").delete().eq("endpoint",sub.endpoint);
+      await sub.unsubscribe();
+    }
+  }catch(e){}
+}
+/* avvisa i 4 giocatori appena bloccata una partita. Fallisce in silenzio se la
+   funzione server non è ancora stata pubblicata, o se nessuno ha attivato nulla:
+   l'app deve continuare a funzionare uguale senza le notifiche. */
+function notificaPartita(match){
+  var nicks=match.teams[0].players.concat(match.teams[1].players).map(function(p){return p.nick});
+  var chi=myNick();
+  var corpo=dayName(match.day)+" "+match.slot+" · "+courtName(match.court);
+  fetch("/api/send-push",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({nicks:nicks,
+      title:(chi?chi+" ti ha messo in campo":"Sei in campo"),
+      body:corpo,url:location.origin+location.pathname})
+  }).catch(function(){});
+}
+
 function parseRecord(rec){var m=(rec||"0V · 0S").match(/\d+/g)||[0,0];return{wins:+m[0],losses:+m[1]}}
 function applyPlayers(rows){
   S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,
@@ -642,6 +709,18 @@ var A={
     }
   },
   pickGender:function(g){S.gender=g;save();render()},
+  toggleNotifiche:function(){
+    if(NOTIFY_STATO==="attive"){
+      disattivaNotifiche().then(function(){NOTIFY_STATO="spente";render()});
+      return;
+    }
+    NOTIFY_STATO="verifica";render();
+    attivaNotifiche().then(function(r){
+      NOTIFY_STATO=r.ok?"attive":(Notification.permission==="denied"?"negate":"spente");
+      render();
+      if(!r.ok&&Notification.permission!=="denied")alert(r.motivo);
+    });
+  },
   /* --- amministratore: apre e modifica il profilo di un altro giocatore --- */
   openPlayer:function(nick){
     if(!isAdminUser())return;
@@ -923,6 +1002,7 @@ var A={
     var match={id:"local-"+Date.now(),day:S.day,slot:S.slot,court:S.court,stake:S.stake,
       winner:null,playedAt:null,score:"",teams:[{players:teamA},{players:teamB}]};
     S.matches=S.matches.concat([match]);S.stake="";S.pairSeed=0;S.sideSwap={};S.pairCombo=null;S.selectedSlot=null;S.screen="home";save();render();
+    notificaPartita(match);
     if(sb)sb.from("matches").insert([{day:match.day,slot:match.slot,court:match.court,stake:match.stake,
       team_a:teamA,team_b:teamB}]).select().then(function(res){
         /* sostituisce l'id provvisorio con quello vero, così "Segna risultato" funziona subito */
@@ -1513,6 +1593,39 @@ function fotoField(p,targetNick){
   ((altrui&&foto)?'<div class="tapmute" onclick="A.clearPhoto(\''+js(p.nick)+'\')" '+
   'style="text-align:center;font-size:12px;color:#FF6A35;padding:10px">Togli la foto</div>':'')+'</div>';
 }
+/* lo stato delle notifiche si legge in modo asincrono (permesso del browser +
+   iscrizione salvata): si tiene in cache e si ridisegna quando arriva la risposta,
+   con lo stesso schema già usato per le foto */
+var NOTIFY_STATO=null;
+function controllaStatoNotifiche(){
+  if(!pushSupportata()){NOTIFY_STATO="non-supportate";return}
+  if(NOTIFY_STATO!==null)return;
+  NOTIFY_STATO="verifica";
+  statoNotifiche().then(function(s){NOTIFY_STATO=s;render()});
+}
+function notificheRow(){
+  controllaStatoNotifiche();
+  var s=NOTIFY_STATO;
+  if(s==="non-supportate")return '<div><div class="kick" style="margin-bottom:6px">Notifiche</div>'+
+    '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:14px;'+
+    'font-size:12px;color:#8C99A8;line-height:1.5">Questo browser non le supporta. Su iPhone servono '+
+    'foto Safari e l\'app aggiunta alla schermata Home; su Android bastano Chrome o Firefox.</div></div>';
+  var attive=s==="attive";
+  var testo=s==="verifica"?"Verifica…":s==="negate"?"Bloccate dal telefono":attive?"Attive":"Spente";
+  var sotto=s==="negate"?"Le hai negate in passato: si riattivano dalle impostazioni del sito nel browser.":
+    attive?"Ti avviso quando ti metto in una partita.":"Un avviso quando vieni messo in una partita, anche ad app chiusa.";
+  return '<div><div class="kick" style="margin-bottom:6px">Notifiche</div>'+
+  '<div class="tapmute" onclick="'+(s==="verifica"||s==="negate"?"":"A.toggleNotifiche()")+'" '+
+  'style="display:flex;align-items:center;gap:14px;background:#141E2A;border:0.5px solid #26313F;'+
+  'border-radius:12px;padding:14px">'+
+  '<div style="width:44px;height:26px;border-radius:13px;flex-shrink:0;position:relative;'+
+  'background:'+(attive?"#C8FF3D":"#26313F")+'">'+
+  '<div style="position:absolute;top:2px;left:'+(attive?"20px":"2px")+';width:22px;height:22px;'+
+  'border-radius:50%;background:'+(attive?"#0B1118":"#8C99A8")+'"></div></div>'+
+  '<div style="flex:1;min-width:0">'+
+  '<div style="font-size:15px;font-weight:600;color:#FFFFFF">'+esc(testo)+'</div>'+
+  '<div style="font-size:11px;color:#8C99A8;line-height:1.4">'+esc(sotto)+'</div></div></div></div>';
+}
 function editProfileScreen(){
   var meP=myPlayer()||{nick:"—"};
   var gender=[["M","Maschio"],["F","Femmina"]].map(function(g){var on=S.gender===g[0];
@@ -1522,7 +1635,7 @@ function editProfileScreen(){
   var fotoRow=fotoField(meP,null);
   return '<div class="pad" style="gap:16px">'+
   '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Il soprannome ("'+esc(meP.nick)+'") non si può cambiare qui perché è legato alle tue partite — chiedi all\'amministratore per quello. Puoi aggiornare foto, nome e genere.</div>'+
-  fotoRow+
+  fotoRow+notificheRow()+
   '<div><div class="kick" style="margin-bottom:6px">Nome e cognome</div>'+
   '<input value="'+esc(S.name)+'" oninput="A.field(\'name\',this.value)" placeholder="es. Luca Bianchi" '+
   'style="width:100%;background:#141E2A;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:15px;color:#FFFFFF;font-size:16px"></div>'+
