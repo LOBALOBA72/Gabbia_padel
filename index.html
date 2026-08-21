@@ -44,7 +44,9 @@ var ROASTS=["Sulla carta perfetti, poi il primo dritto va in tribuna.",
 "Difendono tutto ma non chiudono niente: 40 minuti di scambi.",
 "Se il servizio entra vincono in mezz'ora. Se non entra, ridiamo."];
 var DAYS=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
-var TIMES=["17:00","17:30","18:00","18:30","19:00","19:30","20:00","20:30",
+var TIMES=["9:00","9:30","10:00","10:30","11:00","11:30","12:00","12:30",
+"13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30",
+"17:00","17:30","18:00","18:30","19:00","19:30","20:00","20:30",
 "21:00","21:30","22:00","22:30","23:00"];
 var CLUBS={p22:{name:"Padel 22",url:"https://padel22.it/"},duma:{name:"Duma Padel",url:"https://dumapadel.it/prenotazioni-padel/"},cg:{name:"Centogrigio",url:"https://centogrigio.it/"}};
 var COURTS=[["Padel 22 · Campo 1","coperto, vetro nuovo","vedi app","#C8FF3D","p22"],
@@ -219,6 +221,8 @@ function upgradeMeToId(){
 
 /* --- ELO vero: punteggio atteso + K-factor, a somma zero --- */
 var ELO_K=32;
+/* una partita impegna campo e giocatori per un'ora e mezza */
+var MATCH_DURATION_MIN=90;
 function eloExpected(a,b){return 1/(1+Math.pow(10,(b-a)/400))}
 function avg(list){if(!list.length)return 1500;return list.reduce(function(s,v){return s+v},0)/list.length}
 /* quanti punti passano dai perdenti ai vincitori */
@@ -555,10 +559,19 @@ function renameEverywhere(vecchio,nuovo){
   if(S.tournament&&S.tournament.id)
     sb.from("tournaments").update({rounds:S.tournament.rounds}).eq("id",S.tournament.id).then(function(){});
 }
+/* due partite della stessa durata si sovrappongono se i loro orari di inizio distano
+   meno della durata stessa — vale in entrambe le direzioni: una partita delle 18:00
+   confligge tanto con una nuova delle 18:30 quanto con una delle 17:00 (che
+   arriverebbe fino alle 18:30). */
+function siSovrappongono(slotA,slotB){
+  return Math.abs(slotMinutes(slotA)-slotMinutes(slotB))<MATCH_DURATION_MIN;
+}
+/* chi è già impegnato in una partita che si sovrappone a quei 90 minuti — non solo
+   chi ha una partita che inizia esattamente in quell'orario. */
 function busyNicks(day,slot){
   var out={};
   S.matches.forEach(function(m){
-    if(m.day!==day||m.slot!==slot)return;
+    if(m.day!==day||!siSovrappongono(slot,m.slot))return;
     m.teams[0].players.concat(m.teams[1].players).forEach(function(p){out[p.nick]=true});
   });
   return out;
@@ -1348,9 +1361,17 @@ function book(){
     /* il mese compare solo quando la settimana lo scavalca */
     '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;'+
     'height:11px;line-height:11px">'+(u.mese!==meseIniziale?MESI[u.mese]:"")+'</div></div>'}).join("");
-  /* orari occupati: presi dalle partite gia confermate su questo campo */
+  /* orari occupati sul campo scelto: un nuovo slot è occupato se la partita di 90
+     minuti che ci inizierebbe si sovrapporrebbe a una già confermata — in entrambe
+     le direzioni. Chi prenota le 18:00 blocca sia le 18:30 (dentro la sua partita)
+     sia le 17:00 (che finirebbe alle 18:30, a cavallo con la sua). */
   var taken={};
-  S.matches.forEach(function(m){if(m.day===S.day&&m.court===S.court)taken[m.slot]=true});
+  TIMES.forEach(function(t){
+    var occupato=S.matches.some(function(m){
+      return m.day===S.day&&m.court===S.court&&siSovrappongono(t,m.slot);
+    });
+    if(occupato)taken[t]=true;
+  });
   var isToday=upcoming[0].dow===S.day;
   var nowMin=new Date().getHours()*60+new Date().getMinutes();
   var slots=TIMES.map(function(t){
