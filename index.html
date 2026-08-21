@@ -1395,12 +1395,14 @@ function book(){
   return '<div class="pad" style="gap:20px">'+
   '<div><div class="kick" style="margin-bottom:10px">Giorno</div>'+
   '<div class="dayscroll"><div style="display:flex;gap:8px;width:max-content">'+days+'</div></div></div>'+
-  '<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">'+
-  '<div class="kick">Orari</div><div style="font-size:11px;color:#8C99A8">'+
-  (Object.keys(taken).length?Object.keys(taken).length+" già prenotati dalla Gabbia":"nessuno ancora occupato")+'</div></div>'+
-  '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+slots+'</div></div>'+
+  /* Campo prima di Orari: gli orari occupati dipendono dal campo scelto, quindi
+     ha senso scegliere prima dove giocare e poi vedere quando è libero */
   '<div><div class="kick" style="margin-bottom:10px">Campo</div>'+
   '<div style="display:flex;flex-direction:column;gap:8px">'+courts+'</div></div>'+
+  '<div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">'+
+  '<div class="kick">Orari — '+esc(courtName(S.court))+'</div><div style="font-size:11px;color:#8C99A8">'+
+  (Object.keys(taken).length?Object.keys(taken).length+" già prenotati dalla Gabbia":"nessuno ancora occupato")+'</div></div>'+
+  '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+slots+'</div></div>'+
   '<a href="'+CLUBS[COURTS[S.court][4]].url+'" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
   'text-decoration:none;background:#141E2A;border:1px solid rgba(200,255,61,.3);border-radius:14px;padding:15px;'+
   'color:#C8FF3D;font-weight:700;font-size:14px">Apri app '+CLUBS[COURTS[S.court][4]].name+' per prenotare davvero ↗</a>'+
@@ -2812,11 +2814,4 @@ function render(){
 }
 /* se il link viene aperto quando l'app è già in esecuzione cambia solo la parte dopo
    il #, e lo script non riparte: senza questo, toccare il proprio link non farebbe nulla */
-window.addEventListener("hashchange",function(){
-  if(CODICI_ATTIVI&&codiceDaUrl())entraConCodice().then(function(ok){if(ok)render()});
-});
-render();
-initSync();
-</script>
-</body>
-</html>
+windo
