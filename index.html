@@ -49,21 +49,26 @@ var TIMES=["9:00","9:30","10:00","10:30","11:00","11:30","12:00","12:30",
 "17:00","17:30","18:00","18:30","19:00","19:30","20:00","20:30",
 "21:00","21:30","22:00","22:30","23:00"];
 var CLUBS={p22:{name:"Padel 22",url:"https://padel22.it/"},duma:{name:"Duma Padel",url:"https://dumapadel.it/prenotazioni-padel/"},cg:{name:"Centogrigio",url:"https://centogrigio.it/"}};
+/* il pallino colorato identifica il CIRCOLO (un colore per club, sempre lo stesso
+   su tutte le sue righe); se un campo è coperto o scoperto lo dice l'etichetta
+   apposita nella riga, non più il colore — un pallino non è un modo chiaro di
+   comunicare "coperto/scoperto", uno lo capisce solo se già lo sa. */
 var COURTS=[["Padel 22 · Campo 1","coperto, vetro nuovo","vedi app","#C8FF3D","p22"],
 ["Padel 22 · Campo 2","coperto","vedi app","#C8FF3D","p22"],
 ["Padel 22 · Campo 3","coperto","vedi app","#C8FF3D","p22"],
 ["Padel 22 · Campo 4","coperto","vedi app","#C8FF3D","p22"],
 ["Padel 22 · Campo 5","coperto","vedi app","#C8FF3D","p22"],
-["Padel 22 · Campo 6","scoperto, se non piove","vedi app","#7FA8FF","p22"],
-["Duma Padel · Campo 1","vedi app per dettagli","vedi app","#FF6A35","duma"],
-["Duma Padel · Campo 2","vedi app per dettagli","vedi app","#FF6A35","duma"],
-["Centogrigio · Campo 1","coperto","vedi app","#C8FF3D","cg"],
-["Centogrigio · Campo 2","coperto","vedi app","#C8FF3D","cg"],
-["Centogrigio · Campo 3","coperto","vedi app","#C8FF3D","cg"],
-["Centogrigio · Campo 4","coperto","vedi app","#C8FF3D","cg"],
-["Centogrigio · Campo 5","coperto","vedi app","#C8FF3D","cg"],
-["Centogrigio · Campo 6","scoperto","vedi app","#7FA8FF","cg"],
-["Centogrigio · Campo 7","scoperto","vedi app","#7FA8FF","cg"]];
+["Padel 22 · Campo 6","scoperto, se non piove","vedi app","#C8FF3D","p22"],
+["Duma Padel · Campo 1","coperto","vedi app","#FF6A35","duma"],
+["Duma Padel · Campo 2","coperto","vedi app","#FF6A35","duma"],
+["Duma Padel · Campo 3","scoperto","vedi app","#FF6A35","duma"],
+["Centogrigio · Campo 1","coperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 2","coperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 3","coperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 4","coperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 5","coperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 1 scoperto","scoperto","vedi app","#7FA8FF","cg"],
+["Centogrigio · Campo 2 scoperto","scoperto","vedi app","#7FA8FF","cg"]];
 var TITLES={home:["La Gabbia","Turno 24 · martedì"],book:["Prenota","campo e orario"],
 pairs:["Coppie","bilanciate a ELO"],rank:["Classifica","punti ELO"],
 me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],admedit:["Amministratore","modifica giocatore"],tour:["Torneo","tabellone a eliminazione"],
@@ -1390,13 +1395,23 @@ function book(){
     '<div style="font-size:16px;font-weight:700">'+t+'</div>'+
     '<div style="font-size:10px;opacity:.7;margin-top:2px">'+note+'</div></div>'}).join("");
   var courts=COURTS.map(function(c,i){var on=S.court===i;
+    /* c[1] inizia sempre con "coperto" o "scoperto" (mai il contrario: "scoperto"
+       ha "coperto" a partire dal carattere 1, non 0) — il resto è un dettaglio
+       facoltativo tipo "vetro nuovo" o "se non piove" */
+    var alCoperto=c[1].indexOf("coperto")===0;
+    var dettaglio=c[1].replace(/^(scoperto|coperto)\s*,?\s*/,'');
+    var badge='<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;'+
+      'font-weight:700;letter-spacing:.02em;padding:3px 9px;border-radius:20px;background:'+
+      (alCoperto?"rgba(200,255,61,.14)":"rgba(127,168,255,.14)")+';color:'+
+      (alCoperto?"#C8FF3D":"#7FA8FF")+'">'+(alCoperto?"🏠 Coperto":"☀️ Scoperto")+'</span>';
     return '<div class="tapmute" onclick="A.pickCourt('+i+')" style="display:flex;align-items:center;gap:12px;'+
     'border-radius:12px;padding:14px;background:'+(on?"rgba(200,255,61,.09)":"#141E2A")+
     ';border:1px solid '+(on?"rgba(200,255,61,.5)":"rgba(255,255,255,.1)")+'">'+
-    '<div style="width:10px;height:10px;border-radius:50%;background:'+c[3]+'"></div>'+
-    '<div style="flex:1"><div style="font-size:15px;font-weight:700">'+esc(c[0])+'</div>'+
-    '<div style="font-size:11px;color:#8C99A8">'+esc(c[1])+'</div></div>'+
-    '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+c[2]+'</div></div>'}).join("");
+    '<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'+c[3]+'"></div>'+
+    '<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">'+esc(c[0])+'</div>'+
+    '<div style="margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+badge+
+    (dettaglio?'<span style="font-size:11px;color:#8C99A8">'+esc(dettaglio)+'</span>':'')+'</div></div>'+
+    '<div style="font-size:14px;font-weight:700;color:#C8FF3D;flex-shrink:0">'+c[2]+'</div></div>'}).join("");
   return '<div class="pad" style="gap:20px">'+
   '<div><div class="kick" style="margin-bottom:10px">Giorno</div>'+
   '<div class="dayscroll"><div style="display:flex;gap:8px;width:max-content">'+days+'</div></div></div>'+
