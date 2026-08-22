@@ -123,6 +123,7 @@ if(typeof S.me==="undefined")S.me=null;
 if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
+if(!S.freeFilter)S.freeFilter="m";
 if(typeof S.pairCombo==="undefined")S.pairCombo=null;
 if(!S.tourGironi)S.tourGironi=2;
 if(!S.torneiPassati)S.torneiPassati=[];
@@ -849,6 +850,7 @@ var A={
   },
   cancelAdminEdit:function(){S.adminTarget=null;S.adminNick="";S.screen="rank";save();render()},
   pickRankFilter:function(f){S.rankFilter=f;save();render()},
+  pickFreeFilter:function(f){S.freeFilter=f;save();render()},
   pickTourSize:function(n){S.tourSize=n;save();render()},
   pickTourType:function(v){S.tourType=v;save();render()},
   pickTourGender:function(v){S.tourGender=v;save();render()},
@@ -1311,7 +1313,13 @@ function home(){
     if(m.day!==oggi)return;
     matchNicks(m).forEach(function(n){impegnatiOggi[n]=true});
   });
-  var liberi=S.roster.filter(function(r){return !impegnatiOggi[r.nick]});
+  var liberiTutti=S.roster.filter(function(r){return !impegnatiOggi[r.nick]});
+  var freeFilter=S.freeFilter||"m";
+  var liberi=liberiTutti.filter(function(r){return freeFilter==="f"?r.gender==="F":r.gender!=="F"});
+  var freeTabs=[["m","King"],["f","Queen"]].map(function(t){var on=freeFilter===t[0];
+    return '<div class="tapmute" onclick="A.pickFreeFilter(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:10px;'+
+    'padding:8px 6px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
+    ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:11px">'+t[1]+'</div>'}).join("");
   var signups=liberi.length?liberi.map(function(r){
     return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
     'border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 13px">'+
@@ -1324,7 +1332,9 @@ function home(){
     esc(r.name)+'</div></div>'+
     '<div style="font-size:13px;color:#C8FF3D;font-weight:700;flex-shrink:0">'+r.elo+'</div></div>'}).join(""):
     '<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:12px;'+
-    'padding:16px;text-align:center;color:#8C99A8;font-size:12px">Oggi giocano tutti. Nessuno in panchina.</div>';
+    'padding:16px;text-align:center;color:#8C99A8;font-size:12px">'+
+    (liberiTutti.length?"Nessun"+(freeFilter==="f"?"a Queen libera":" King libero")+" oggi.":"Oggi giocano tutti. Nessuno in panchina.")+
+    '</div>';
   var matchesHtml;
   if(S.matches.length===0){
     matchesHtml='<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:16px;'+
@@ -1409,6 +1419,7 @@ function home(){
   '<div class="kick">Chi è libero oggi</div>'+
   '<div class="tapmute" onclick="A.nav(\'book\')" style="font-size:12px;color:#8C99A8;text-decoration:underline;'+
   'flex-shrink:0">+ organizza</div></div>'+
+  '<div style="display:flex;gap:8px;margin-bottom:10px">'+freeTabs+'</div>'+
   '<div style="display:flex;flex-direction:column;gap:8px">'+signups+'</div></div>'+
   recentHtml+'</div>';
 }
