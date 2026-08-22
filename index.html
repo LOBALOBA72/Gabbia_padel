@@ -1241,11 +1241,11 @@ function photoBox(nick,h){
   var alt=h||118;
   var base="width:100%;height:"+alt+"px;border-radius:10px;overflow:hidden;";
   if(foto){
-    /* "center center" invece di "center top": tante foto hanno il volto non
-       proprio in cima, e ancorare in alto lo tagliava via — al centro si vede
-       tutto il personaggio, non solo la fronte */
+    /* "right center" invece di "center top": tante foto hanno il soggetto verso
+       destra (non in cima), quindi si ancora a destra invece che al centro
+       per non tagliarlo via */
     return '<div style="'+base+'background-image:url(\''+foto+'\');background-size:cover;'+
-    'background-position:center center;background-color:#0F1620;border:1px solid rgba(255,255,255,.14)"></div>';
+    'background-position:right center;background-color:#0F1620;border:1px solid rgba(255,255,255,.14)"></div>';
   }
   /* iniziali proporzionate all'altezza: la stessa funzione serve i riquadri grandi
      delle Coppie e quelli piccoli delle partite confermate in Gabbia */
