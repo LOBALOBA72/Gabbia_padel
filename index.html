@@ -1808,6 +1808,26 @@ function rank(){
     (isAdminUser()?'<div class="tapmute" onclick="A.remove(\''+js(r.nick)+'\')" '+
     'style="width:44px;height:44px;margin:-9px -8px -9px 0;border-radius:50%;display:grid;place-items:center;'+
     'color:#8C99A8;font-size:18px">×</div>':'')+'</div>'}).join("");
+  /* chi non ha ancora giocato non compare in classifica (ha senso per tutti),
+     ma l'amministratore deve comunque poterlo raggiungere per modificarlo o
+     eliminarlo — altrimenti quei profili diventano irraggiungibili */
+  var nonGiocato=isAdminUser()?S.roster.filter(function(r){return !haGiocato(r)})
+    .sort(function(a,b){return a.nick.localeCompare(b.nick)}):[];
+  var nonGiocatoRows=nonGiocato.map(function(r){
+    return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
+    'border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 13px">'+
+    '<div class="tapmute" onclick="A.openPlayer(\''+js(r.nick)+'\')" style="flex:1;min-width:0">'+
+    '<div style="font-size:15px;font-weight:700">'+
+    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+
+    ' <span style="font-size:11px;color:#C8FF3D;font-weight:600">modifica</span></div>'+
+    '<div style="font-size:11px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+    esc(r.name)+' · mai giocato</div></div>'+
+    '<div class="tapmute" onclick="A.remove(\''+js(r.nick)+'\')" style="width:44px;height:44px;'+
+    'margin:-9px -8px -9px 0;border-radius:50%;display:grid;place-items:center;color:#8C99A8;'+
+    'font-size:18px;flex-shrink:0">×</div></div>'}).join("");
+  var nonGiocatoHtml=nonGiocato.length?
+    '<div><div class="kick" style="margin-bottom:10px">Non hanno ancora giocato ('+nonGiocato.length+')</div>'+
+    '<div style="display:flex;flex-direction:column;gap:6px">'+nonGiocatoRows+'</div></div>':'';
   return '<div class="pad">'+
   (isAdminUser()?'<div class="tapmute" onclick="A.nav(\'add\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
   'background:#141E2A;border:1px dashed rgba(200,255,61,.4);border-radius:12px;padding:14px;color:#C8FF3D;'+
@@ -1817,6 +1837,7 @@ function rank(){
   '<div style="display:flex;gap:8px">'+tabs+'</div>'+
   '<div style="display:flex;gap:8px;align-items:flex-end">'+pod+'</div>'+
   '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>'+
+  nonGiocatoHtml+
   '<div class="tapmute" onclick="'+(isAdminUser()?"A.lockAdmin()":"A.tryAdminUnlock()")+'" style="text-align:center;font-size:11px;color:#8C99A8;padding:4px">'+
   (isAdminUser()?"Modalità amministratore attiva — tocca per uscire":"Accesso amministratore")+'</div></div>';
 }
