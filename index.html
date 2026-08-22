@@ -1348,14 +1348,19 @@ function scoreboardHtml(nomeA,nomeB,winnerKey,scoreStr,colA,colB){
   /* per convenzione si scrivono prima i giochi di chi ha vinto LA PARTITA: se
      ha vinto la squadra B, il primo numero di ogni set è suo, non della A */
   var aFirst=winnerKey!=="b";
-  var cella=function(v){return '<div style="width:20px;text-align:center;font-size:13px;font-weight:700">'+v+'</div>'};
-  var riga=function(nome,vals,col){return '<div style="display:flex;align-items:center;gap:8px">'+
+  /* il colore di ogni numero segue chi ha vinto QUEL set, non chi ha vinto
+     la partita: così un set vinto "in rimonta" dalla squadra che poi ha perso
+     la partita si vede comunque evidenziato con lo stesso verde del vincitore */
+  var cella=function(v,vinto){return '<div style="width:20px;text-align:center;font-size:13px;font-weight:700;'+
+    'color:'+(vinto?"#C8FF3D":"#8C99A8")+'">'+v+'</div>'};
+  var riga=function(nome,vals,altri,col){return '<div style="display:flex;align-items:center;gap:8px">'+
     '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:'+col+';white-space:nowrap;'+
     'overflow:hidden;text-overflow:ellipsis">'+esc(nome)+'</div>'+
-    '<div style="display:flex;gap:3px;flex-shrink:0">'+vals.map(cella).join("")+'</div></div>'};
+    '<div style="display:flex;gap:3px;flex-shrink:0">'+
+    vals.map(function(v,i){return cella(v,v>altri[i])}).join("")+'</div></div>'};
   var valsA=sets.map(function(s){return aFirst?s[0]:s[1]});
   var valsB=sets.map(function(s){return aFirst?s[1]:s[0]});
-  return '<div style="display:flex;flex-direction:column;gap:4px">'+riga(nomeA,valsA,colA)+riga(nomeB,valsB,colB)+'</div>';
+  return '<div style="display:flex;flex-direction:column;gap:4px">'+riga(nomeA,valsA,valsB,colA)+riga(nomeB,valsB,valsA,colB)+'</div>';
 }
 function confirmBlock(m){
   if(!isProposed(m))return "";
