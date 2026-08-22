@@ -339,11 +339,16 @@ function notificaPartita(match){
   }).catch(function(){});
 }
 
-function parseRecord(rec){var m=(rec||"0V · 0S").match(/\d+/g)||[0,0];return{wins:+m[0],losses:+m[1]}}
+function parseRecord(rec){
+  var s=rec||"";
+  return{wins:+((s.match(/(\d+)\s*V/)||[0,0])[1]),
+    draws:+((s.match(/(\d+)\s*P/)||[0,0])[1]),
+    losses:+((s.match(/(\d+)\s*S/)||[0,0])[1])};
+}
 function applyPlayers(rows){
   S.roster=rows.map(function(r){return{id:r.id,nick:r.nick,name:r.name,elo:r.elo,gender:r.gender,
     nationality:r.nationality||"",isAdmin:r.is_admin===true,
-    record:(r.wins||0)+"V · "+(r.losses||0)+"S",delta:r.last_delta||""}}).sort(function(a,b){return b.elo-a.elo});
+    record:(r.wins||0)+"V · "+(r.draws||0)+"P · "+(r.losses||0)+"S",delta:r.last_delta||""}}).sort(function(a,b){return b.elo-a.elo});
   upgradeMeToId();
   save();
 }
@@ -719,7 +724,7 @@ var A={
       alert("Il soprannome \""+nick+"\" è già preso. Scegline un altro.");return;
     }
     var np={nick:nick,name:S.name.trim()||"—",
-      elo:parseInt(S.elo,10)||1500,record:"0V · 0S",delta:"nuovo",gender:S.gender,
+      elo:parseInt(S.elo,10)||1500,record:"0V · 0P · 0S",delta:"nuovo",gender:S.gender,
       nationality:S.nationality||""};
     S.roster=S.roster.concat([np]).sort(function(a,b){return b.elo-a.elo});
     var wasSignup=S.addAsMe;
@@ -1210,22 +1215,38 @@ var A={
     if(!match)return;
     A._closeMatch(match,winnerKey,score);
   },
-  /* pareggio: la partita si chiude ed entra nello storico, ma nessuno vince
-     né perde — niente swing di ELO, niente vittoria/sconfitta in più per
-     nessuno dei quattro, e niente penitenza (non c'è chi ha perso la sfida) */
+  /* pareggio: la partita si chiude ed entra nello storico, non tocca ELO né
+     penitenze (non c'è chi ha perso la sfida), ma conta per tutti e quattro
+     come pareggio a sé — non più vittoria/sconfitta, non più "come se non
+     fosse successo": deve vedersi nel record */
   _closeDraw:function(match,score){
     score=score||match.score||"";
     var playedAt=new Date().toISOString();
+    var giocatori=matchNicks(match);
+    var updates=[];
+    S.roster=S.roster.map(function(r){
+      if(giocatori.indexOf(r.nick)===-1)return r;
+      var rec=parseRecord(r.record);
+      var nr=Object.assign({},r,{delta:"pareggio",record:rec.wins+"V · "+(rec.draws+1)+"P · "+rec.losses+"S"});
+      updates.push({id:r.id,nick:r.nick,draws:rec.draws+1});
+      return nr;
+    });
     S.matches=S.matches.filter(function(m){return m.id!==match.id});
     S.history=[Object.assign({},match,{winner:"x",playedAt:playedAt,score:score})].concat(S.history);
     S.winner=null;S.set1="";S.set2="";S.set3="";S.activeMatchId=null;S.screen="rank";save();render();
-    /* match.confirmations a questo punto ha già dentro chi ha davvero confermato
-       (confirmResult aggiorna S.matches prima di chiamare applyResult) — va
-       scritta anche sul server, altrimenti il record resta con la sola conferma
-       implicita del proponente anche quando un avversario ha confermato per davvero */
-    if(sb)sb.from("matches").update({winner:"x",played_at:playedAt,score:score,confirmations:match.confirmations||null}).eq("id",match.id).then(function(res){
-      if(res&&res.error)sb.from("matches").update({winner:"x",played_at:playedAt}).eq("id",match.id).then(function(){});
-    });
+    if(sb){
+      updates.forEach(function(u){
+        var q=sb.from("players").update({draws:u.draws,last_delta:"pareggio"});
+        (u.id?q.eq("id",u.id):q.eq("nick",u.nick)).then(function(){});
+      });
+      /* match.confirmations a questo punto ha già dentro chi ha davvero confermato
+         (confirmResult aggiorna S.matches prima di chiamare applyResult) — va
+         scritta anche sul server, altrimenti il record resta con la sola conferma
+         implicita del proponente anche quando un avversario ha confermato per davvero */
+      sb.from("matches").update({winner:"x",played_at:playedAt,score:score,confirmations:match.confirmations||null}).eq("id",match.id).then(function(res){
+        if(res&&res.error)sb.from("matches").update({winner:"x",played_at:playedAt}).eq("id",match.id).then(function(){});
+      });
+    }
   },
   _closeMatch:function(match,winnerKey,score){
     if(winnerKey==="x"){A._closeDraw(match,score);return;}
@@ -1241,13 +1262,13 @@ var A={
       var rec,nr;
       if(winners.indexOf(r.nick)!==-1){
         rec=parseRecord(r.record);
-        nr=Object.assign({},r,{elo:r.elo+swing,delta:"+"+swing,record:(rec.wins+1)+"V · "+rec.losses+"S"});
+        nr=Object.assign({},r,{elo:r.elo+swing,delta:"+"+swing,record:(rec.wins+1)+"V · "+rec.draws+"P · "+rec.losses+"S"});
         updates.push({id:r.id,nick:r.nick,elo:nr.elo,wins:rec.wins+1,losses:rec.losses,last_delta:"+"+swing});
         return nr;
       }
       if(losers.indexOf(r.nick)!==-1){
         rec=parseRecord(r.record);
-        nr=Object.assign({},r,{elo:Math.max(0,r.elo-swing),delta:"-"+swing,record:rec.wins+"V · "+(rec.losses+1)+"S"});
+        nr=Object.assign({},r,{elo:Math.max(0,r.elo-swing),delta:"-"+swing,record:rec.wins+"V · "+rec.draws+"P · "+(rec.losses+1)+"S"});
         updates.push({id:r.id,nick:r.nick,elo:nr.elo,wins:rec.wins,losses:rec.losses+1,last_delta:"-"+swing});
         return nr;
       }
@@ -1734,7 +1755,7 @@ function resultScreen(){
 function rank(){
   /* chi non ha ancora giocato nessuna partita non compare in classifica: a
      1500 tondo non dice niente su quanto sia forte, occuperebbe solo posto */
-  var haGiocato=function(r){var rec=parseRecord(r.record);return rec.wins>0||rec.losses>0};
+  var haGiocato=function(r){var rec=parseRecord(r.record);return rec.wins>0||rec.draws>0||rec.losses>0};
   var males=S.roster.filter(function(r){return r.gender!=="F"&&haGiocato(r)});
   var females=S.roster.filter(function(r){return r.gender==="F"&&haGiocato(r)});
   var king=males[0],queen=females[0];
@@ -2014,7 +2035,7 @@ function winStreak(nick){
 }
 /* premi calcolati sui dati veri: niente bacheca uguale per tutti */
 function awardsFor(p,rankPos){
-  var rec=parseRecord(p.record),games=rec.wins+rec.losses,out=[];
+  var rec=parseRecord(p.record),games=rec.wins+rec.draws+rec.losses,out=[];
   if(rankPos===1)out.push(["1","In vetta alla Gabbia",(p.gender==="F"?"Queen":"King")+" of the Padel"]);
   else if(rankPos>0&&rankPos<=3)out.push(["3","Sul podio",rankPos+"º posto in classifica"]);
   var st=winStreak(p.nick);
@@ -2030,7 +2051,7 @@ function me(){
   var rankList=meP.gender==="F"?S.roster.filter(function(r){return r.gender==="F"}):S.roster.filter(function(r){return r.gender!=="F"});
   var rankPos=rankList.map(function(r){return r.nick}).indexOf(meP.nick)+1;
   var rankLabel=meP.gender==="F"?"Queen of the Padel":"King of the Padel";
-  var statgrid=[[String(meP.elo),"ELO"],[meP.record,"V / S"],["#"+rankPos,"Ranking"]]
+  var statgrid=[[String(meP.elo),"ELO"],[meP.record,"V / P / S"],["#"+rankPos,"Ranking"]]
     .map(function(s){
     /* i valori lunghi (es. "12V · 34S") scendono di corpo invece di andare a capo */
     var fs=s[0].length>5?18:28;
