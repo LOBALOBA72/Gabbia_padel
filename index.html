@@ -1906,13 +1906,13 @@ function albumScreen(){
       'style="border-radius:14px;overflow:hidden;background:#141E2A;border:1px solid rgba(255,255,255,.14);'+
       'height:250px;display:flex;flex-direction:column">'+
       '<div style="position:relative;flex:1;min-height:0;background:#0F1620">'+
-      /* "cover" ancorato a destra: la foto riempie tutto il riquadro senza
-         bande vuote sopra e sotto, e l'eventuale taglio cade a sinistra —
-         dove nelle nostre foto c'è sfondo, non la persona. In verticale si
-         parte dal 20% invece che dal centro: nelle foto in piedi la faccia
-         sta in alto, e centrando la si tagliava via */
+      /* "cover" riempie il riquadro senza bande vuote. In orizzontale non si
+         va fino in fondo a destra (72% invece di 100%): ancorando al bordo
+         destro si tagliava via troppa parte sinistra del giocatore. In
+         verticale si parte dal 20%: nelle foto in piedi la faccia sta in
+         alto, e centrando la si tagliava via */
       '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;'+
-      'background-repeat:no-repeat;background-position:right 20%"></div>'+
+      'background-repeat:no-repeat;background-position:72% 20%"></div>'+
       '<div style="position:absolute;top:6px;left:6px;background:#C8FF3D;color:#0B1118;font-weight:800;'+
       'font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center">'+num+'</div></div>'+
       '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:7px 6px">'+
