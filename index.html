@@ -392,7 +392,7 @@ async function refetch(table){
   if(!sb)return;
   var col=table==="players"?"elo":"created_at",asc=table!=="players";
   /* i giocatori si scaricano SENZA foto: quelle arrivano a richiesta da chiediFotoMancanti() */
-  var campi=table==="players"?"id,nick,name,elo,gender,wins,losses,last_delta,nationality,is_admin":"*";
+  var campi=table==="players"?"id,nick,name,elo,gender,wins,draws,losses,last_delta,nationality,is_admin":"*";
   var res=await sb.from(table).select(campi).order(col,{ascending:asc});
   if(res.error)return;
   if(table==="players")applyPlayers(res.data);
@@ -467,7 +467,7 @@ function pulisciTorneiChiusi(rows){
 async function initSync(){
   if(!sb){codeCheckDone=true;return;}
   try{
-    var pl=await sb.from("players").select("id,nick,name,elo,gender,wins,losses,last_delta,nationality,is_admin");
+    var pl=await sb.from("players").select("id,nick,name,elo,gender,wins,draws,losses,last_delta,nationality,is_admin");
     if(!pl.error)applyPlayers(pl.data);
     /* i codici NON viaggiano con l'elenco: si controlla solo se la colonna esiste */
     var probe=await sb.from("players").select("access_code").limit(1);
