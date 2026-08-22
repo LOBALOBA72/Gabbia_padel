@@ -1494,17 +1494,19 @@ function home(){
       '<div style="font-size:12px;color:#8C99A8;margin-top:2px">nessun giocatore iscritto</div>')+'</div>';
   var recent=S.history.slice(0,3).map(function(m){
     var isDraw=m.winner==="x";
-    var wi=m.winner==="b"?1:0;
-    var w=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
-    var l=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
-    return '<div style="display:flex;align-items:center;gap:10px;background:#141E2A;'+
-    'border:0.5px solid #26313F;border-radius:12px;padding:12px 13px">'+
-    '<div style="flex:1;min-width:0">'+
-    '<div style="font-size:13px;font-weight:600;color:'+(isDraw?"#8C99A8":"#C8FF3D")+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
-    esc(w)+(isDraw?" · pareggio":"")+'</div>'+
-    '<div style="font-size:12px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(l)+'</div></div>'+
-    '<div style="font-size:12px;color:#8C99A8;text-align:right;flex-shrink:0">'+
-    (m.score?esc(m.score):dayName(m.day)+" "+esc(m.slot))+'</div></div>'}).join("");
+    var nomeA=m.teams[0].players.map(function(p){return p.nick}).join(" / ");
+    var nomeB=m.teams[1].players.map(function(p){return p.nick}).join(" / ");
+    var colA=isDraw?"#FFFFFF":(m.winner==="a"?"#C8FF3D":"#8C99A8");
+    var colB=isDraw?"#FFFFFF":(m.winner==="b"?"#C8FF3D":"#8C99A8");
+    /* tabellone da tennis se c'è un punteggio scritto, altrimenti solo i nomi */
+    var corpo=scoreboardHtml(nomeA,nomeB,m.winner,m.score,colA,colB)||
+      ('<div style="font-size:13px;font-weight:600;color:'+colA+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+      esc(nomeA)+'</div>'+
+      '<div style="font-size:12px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nomeB)+'</div>');
+    return '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:12px 13px">'+
+    corpo+
+    '<div style="font-size:11px;color:#8C99A8;margin-top:6px">'+
+    (isDraw?"Pareggio · ":"")+dayName(m.day)+" "+esc(m.slot)+'</div></div>'}).join("");
   var recentHtml=S.history.length?('<div><div class="kick" style="margin-bottom:10px">Ultime partite</div>'+
     '<div style="display:flex;flex-direction:column;gap:8px">'+recent+'</div></div>'):"";
   return '<div class="pad">'+
