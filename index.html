@@ -79,7 +79,7 @@ var COURTS=[["Padel 22 · Campo 1","coperto, vetro nuovo","vedi app","#C8FF3D","
 var TITLES={home:["La Gabbia","Turno 24 · martedì"],book:["Prenota","campo e orario"],
 pairs:["Coppie","bilanciate a ELO"],rank:["Classifica","punti ELO"],
 me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],admedit:["Amministratore","modifica giocatore"],tour:["Torneo","tabellone a eliminazione"],
-stats:["Statistiche","i tuoi numeri"]};
+stats:["Statistiche","i tuoi numeri"],album:["Album","tutti i partecipanti"]};
 
 /* Nazionalità: si salva il codice ISO a 2 lettere, la bandiera si ricava da quello
    (due "regional indicator" unicode) — così non serve nessuna tabella di emoji.
@@ -126,6 +126,7 @@ if(typeof S.isAdmin==="undefined")S.isAdmin=false;
 if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
 if(!S.freeFilter)S.freeFilter="m";
+if(!S.albumFilter)S.albumFilter="m";
 if(typeof S.pairCombo==="undefined")S.pairCombo=null;
 if(!S.tourGironi)S.tourGironi=2;
 if(!S.torneiPassati)S.torneiPassati=[];
@@ -891,6 +892,7 @@ var A={
   cancelAdminEdit:function(){S.adminTarget=null;S.adminNick="";S.screen="rank";save();render()},
   pickRankFilter:function(f){S.rankFilter=f;save();render()},
   pickFreeFilter:function(f){S.freeFilter=f;save();render()},
+  pickAlbumFilter:function(f){S.albumFilter=f;save();render()},
   pickTourSize:function(n){S.tourSize=n;save();render()},
   pickTourType:function(v){S.tourType=v;save();render()},
   pickTourGender:function(v){S.tourGender=v;save();render()},
@@ -1838,8 +1840,50 @@ function rank(){
   '<div style="display:flex;gap:8px;align-items:flex-end">'+pod+'</div>'+
   '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>'+
   nonGiocatoHtml+
+  '<div class="tapmute" onclick="A.nav(\'album\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
+  'background:#141E2A;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#FFFFFF;'+
+  'font-weight:700;font-size:14px">📖 Album dei matti</div>'+
   '<div class="tapmute" onclick="'+(isAdminUser()?"A.lockAdmin()":"A.tryAdminUnlock()")+'" style="text-align:center;font-size:11px;color:#8C99A8;padding:4px">'+
   (isAdminUser()?"Modalità amministratore attiva — tocca per uscire":"Accesso amministratore")+'</div></div>';
+}
+/* album delle figurine: tutti i partecipanti (anche chi non ha ancora
+   giocato), divisi per King/Queen, numerati secondo la posizione in
+   classifica ELO. Chi non ha ancora una foto ha una figurina "vuota" — solo
+   numero e nome, come uno spazio dell'album non ancora riempito. */
+function albumScreen(){
+  var filter=S.albumFilter||"m";
+  var list=S.roster.filter(function(r){return filter==="f"?r.gender==="F":r.gender!=="F"});
+  var tabs=[["m","King"],["f","Queen"]].map(function(t){var on=filter===t[0];
+    return '<div class="tapmute" onclick="A.pickAlbumFilter(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
+    'padding:12px 6px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
+    ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:12px">'+t[1]+'</div>'}).join("");
+  var cards=list.map(function(r,i){
+    var num=i+1,foto=fotoDi(r.nick);
+    if(foto){
+      return '<div style="border-radius:14px;overflow:hidden;background:#141E2A;border:1px solid rgba(255,255,255,.14);'+
+      'height:156px;display:flex;flex-direction:column">'+
+      '<div style="position:relative;height:120px;flex-shrink:0">'+
+      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;'+
+      'background-position:center top"></div>'+
+      '<div style="position:absolute;top:6px;left:6px;background:#C8FF3D;color:#0B1118;font-weight:800;'+
+      'font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center">'+num+'</div></div>'+
+      '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:4px 6px">'+
+      '<div style="font-size:12px;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden;'+
+      'text-overflow:ellipsis">'+esc(r.nick)+'</div></div></div>';
+    }
+    return '<div style="border-radius:14px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.2);'+
+    'height:156px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px">'+
+    '<div style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.08);color:#8C99A8;'+
+    'font-weight:800;font-size:12px;display:grid;place-items:center">'+num+'</div>'+
+    '<div style="font-size:12px;font-weight:700;color:#8C99A8;text-align:center;white-space:nowrap;overflow:hidden;'+
+    'text-overflow:ellipsis;max-width:100%">'+esc(r.nick)+'</div></div>';
+  }).join("");
+  return '<div class="pad">'+
+  '<div style="font-size:13px;color:#8C99A8;line-height:1.5">Tutti i matti della Gabbia, numerati come in classifica. '+
+  'Chi non ha ancora una foto ha la figurina da completare.</div>'+
+  '<div style="display:flex;gap:8px">'+tabs+'</div>'+
+  '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">'+cards+'</div>'+
+  '<div class="tapmute" onclick="A.nav(\'rank\')" style="text-align:center;font-size:13px;color:#8C99A8;padding:8px">Torna alla classifica</div></div>';
 }
 
 function addScreen(){
@@ -3092,7 +3136,7 @@ var TB=(function(){
 
 function tabIndex(){
   var s=S.screen;
-  if(s==="add"||s==="result"||s==="admedit")return 3;
+  if(s==="add"||s==="result"||s==="admedit"||s==="album")return 3;
   if(s==="editme"||s==="stats")return 5;
   return Math.max(0,["home","book","pairs","rank","tour","me"].indexOf(s));
 }
@@ -3136,7 +3180,7 @@ function render(){
     return;
   }
   bar.style.display="block";
-  var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen,admedit:adminEditScreen}[S.screen]||home;
+  var body={home:home,book:book,pairs:pairs,rank:rank,add:addScreen,me:me,editme:editProfileScreen,result:resultScreen,tour:tour,stats:statsScreen,admedit:adminEditScreen,album:albumScreen}[S.screen]||home;
   try{
     view.innerHTML=header()+'<div class="scroll">'+body()+'</div>';
   }catch(e){
