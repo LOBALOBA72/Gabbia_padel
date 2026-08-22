@@ -1219,7 +1219,11 @@ var A={
     S.matches=S.matches.filter(function(m){return m.id!==match.id});
     S.history=[Object.assign({},match,{winner:"x",playedAt:playedAt,score:score})].concat(S.history);
     S.winner=null;S.set1="";S.set2="";S.set3="";S.activeMatchId=null;S.screen="rank";save();render();
-    if(sb)sb.from("matches").update({winner:"x",played_at:playedAt,score:score}).eq("id",match.id).then(function(res){
+    /* match.confirmations a questo punto ha già dentro chi ha davvero confermato
+       (confirmResult aggiorna S.matches prima di chiamare applyResult) — va
+       scritta anche sul server, altrimenti il record resta con la sola conferma
+       implicita del proponente anche quando un avversario ha confermato per davvero */
+    if(sb)sb.from("matches").update({winner:"x",played_at:playedAt,score:score,confirmations:match.confirmations||null}).eq("id",match.id).then(function(res){
       if(res&&res.error)sb.from("matches").update({winner:"x",played_at:playedAt}).eq("id",match.id).then(function(){});
     });
   },
@@ -1262,8 +1266,11 @@ var A={
         (u.id?q.eq("id",u.id):q.eq("nick",u.nick)).then(function(){});
       });
       if(stakeText)sb.from("penalties").insert([{title:stakeText,who:losers.join(" e "),done:false}]).then(function(){});
-      /* se la colonna score non esiste ancora, si ripiega su vincitore + data */
-      sb.from("matches").update({winner:winnerKey,played_at:playedAt,score:score}).eq("id",match.id).then(function(res){
+      /* se la colonna score non esiste ancora, si ripiega su vincitore + data.
+         match.confirmations qui ha già dentro chi ha davvero confermato (vedi
+         nota gemella in _closeDraw) — va persistita anche lei, altrimenti il
+         record finale mostra solo l'implicita del proponente */
+      sb.from("matches").update({winner:winnerKey,played_at:playedAt,score:score,confirmations:match.confirmations||null}).eq("id",match.id).then(function(res){
         if(res&&res.error)sb.from("matches").update({winner:winnerKey,played_at:playedAt}).eq("id",match.id).then(function(){});
       });
     }
@@ -1700,8 +1707,11 @@ function resultScreen(){
 }
 
 function rank(){
-  var males=S.roster.filter(function(r){return r.gender!=="F"});
-  var females=S.roster.filter(function(r){return r.gender==="F"});
+  /* chi non ha ancora giocato nessuna partita non compare in classifica: a
+     1500 tondo non dice niente su quanto sia forte, occuperebbe solo posto */
+  var haGiocato=function(r){var rec=parseRecord(r.record);return rec.wins>0||rec.losses>0};
+  var males=S.roster.filter(function(r){return r.gender!=="F"&&haGiocato(r)});
+  var females=S.roster.filter(function(r){return r.gender==="F"&&haGiocato(r)});
   var king=males[0],queen=females[0];
   var filter=S.rankFilter||"m";
   var list=filter==="f"?females:males;
