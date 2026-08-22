@@ -514,6 +514,25 @@ function pendingVoters(m){
   return matchNicks(m).filter(function(n){return c[n]!==true});
 }
 function isProposed(m){return !!m.winner&&!m.playedAt}
+/* controlla che il punteggio dei set scritti (se ce ne sono) dia davvero la
+   vittoria al lato dichiarato. Per convenzione si scrivono prima i giochi di
+   chi ha vinto QUELLA partita (non necessariamente quel set): "7-5 1-6"
+   significa che il vincitore dichiarato ha preso il primo set 7-5 e perso il
+   secondo 1-6 — un set a testa, nessun vincitore vero. Se non ci sono
+   punteggi scritti (il campo è opzionale) non c'è nulla da controllare. */
+function punteggioContraddiceVincitore(scoreStr){
+  var sets=String(scoreStr||"").trim().split(/\s+/).filter(Boolean);
+  if(!sets.length)return false;
+  var vinti=0,persi=0;
+  sets.forEach(function(s){
+    var m=s.match(/^(\d+)-(\d+)$/);
+    if(!m)return;
+    var a=+m[1],b=+m[2];
+    if(a>b)vinti++;else if(b>a)persi++;
+  });
+  if(vinti+persi===0)return false; /* niente di leggibile: non blocchiamo */
+  return vinti<=persi;
+}
 /* squadra (0 o 1) a cui appartiene un nick in questa partita, -1 se non c'è */
 function squadraDi(m,nick){
   for(var t=0;t<2;t++)if(m.teams[t].players.some(function(p){return p.nick===nick}))return t;
@@ -529,7 +548,11 @@ function squadraAvversariaProponente(m){
 }
 function possoConfermare(m,nick){
   var avv=squadraAvversariaProponente(m);
-  return avv===null||squadraDi(m,nick)===avv;
+  if(avv===null||squadraDi(m,nick)===avv)return true;
+  /* l'amministratore può confermare come arbitro neutrale — ma non un
+     risultato che ha proposto lui stesso o il suo compagno di squadra:
+     su quello resta valida solo la conferma di un vero avversario */
+  return isAdminUser()&&squadraDi(m,nick)!==squadraDi(m,m.proposedBy);
 }
 /* chi manca perché il risultato si chiuda: solo gli avversari del proponente
    che non hanno ancora confermato — non i suoi compagni di squadra */
@@ -540,10 +563,15 @@ function avversariMancanti(m){
   return m.teams[avv].players.map(function(p){return p.nick}).filter(function(n){return conf[n]!==true});
 }
 /* tocca a me votare? (vale per tutti e quattro: anche un compagno di squadra
-   può smentire un punteggio sbagliato, solo non può confermarlo lui) */
+   può smentire un punteggio sbagliato, solo non può confermarlo lui).
+   L'amministratore vota anche se non gioca questa partita: fa da arbitro
+   neutrale invece di dover per forza convalidare "al buio" senza conferme. */
 function needsMyVote(m){
+  if(!isProposed(m))return false;
   var n=myNick();
-  return isProposed(m)&&!!n&&matchNicks(m).indexOf(n)!==-1&&(m.confirmations||{})[n]!==true;
+  if(n&&matchNicks(m).indexOf(n)!==-1)return (m.confirmations||{})[n]!==true;
+  if(isAdminUser())return (m.confirmations||{})[n||"admin"]!==true;
+  return false;
 }
 /* ---- rinomina di un soprannome, ovunque compaia ----
    il nick non è solo un'etichetta: è la chiave dentro matches.team_a/team_b,
@@ -1106,6 +1134,13 @@ var A={
       if(!isAdminUser()){alert("Solo chi ha giocato questa partita può registrarne il risultato.");return;}
     }
     var score=[S.set1,S.set2,S.set3].map(function(s){return String(s||"").trim()}).filter(Boolean).join(" ");
+    /* il controllo punteggio/vincitore non ha senso per un pareggio dichiarato:
+       lì per definizione non c'è un lato che "avrebbe dovuto" vincere di più */
+    if(S.winner!=="x"&&punteggioContraddiceVincitore(score)){
+      alert("Il punteggio scritto non dà la vittoria a questa squadra (sembra un pareggio o addirittura una sconfitta). "+
+        "Controlla i punteggi dei set o cambia chi ha vinto.");
+      return;
+    }
     var conf={};
     if(io)conf[io]=true; /* il proponente conferma implicitamente */
     var prop={winner:S.winner,score:score,proposed_by:io||"admin",confirmations:conf};
@@ -1122,7 +1157,10 @@ var A={
   confirmResult:function(id,ok){
     var m=S.matches.filter(function(x){return x.id==id})[0];
     if(!m||!isProposed(m))return;
-    var io=myNick();if(!io)return;
+    /* un amministratore senza un proprio profilo giocatore (sbloccato solo col
+       PIN) vota comunque, sotto una chiave fissa invece del nick */
+    var io=myNick()||(isAdminUser()?"admin":null);
+    if(!io)return;
     if(ok&&!possoConfermare(m,io)){
       alert("Solo un avversario di chi ha proposto il risultato può confermarlo — un compagno di squadra no. "+
         "Puoi comunque smentirlo se non è andata così.");
@@ -1151,6 +1189,14 @@ var A={
     if(!isAdminUser())return;
     var m=S.matches.filter(function(x){return x.id==id})[0];
     if(!m||!isProposed(m))return;
+    /* un amministratore che gioca anche lui questa partita non può convalidarla
+       da solo: scavalcherebbe la conferma dell'avversario, che è tutto il senso
+       della regola anti-furbata. Deve aspettare come chiunque altro. */
+    var io=myNick();
+    if(io&&matchNicks(m).indexOf(io)!==-1){
+      alert("Giochi anche tu questa partita: non puoi convalidarla da amministratore, deve confermarla un avversario.");
+      return;
+    }
     if(!confirm("Convalidare il risultato come amministratore, senza attendere le conferme mancanti?"))return;
     A.applyResult(m.id,m.winner,m.score);
   },
@@ -1159,7 +1205,21 @@ var A={
     if(!match)return;
     A._closeMatch(match,winnerKey,score);
   },
+  /* pareggio: la partita si chiude ed entra nello storico, ma nessuno vince
+     né perde — niente swing di ELO, niente vittoria/sconfitta in più per
+     nessuno dei quattro, e niente penitenza (non c'è chi ha perso la sfida) */
+  _closeDraw:function(match,score){
+    score=score||match.score||"";
+    var playedAt=new Date().toISOString();
+    S.matches=S.matches.filter(function(m){return m.id!==match.id});
+    S.history=[Object.assign({},match,{winner:"x",playedAt:playedAt,score:score})].concat(S.history);
+    S.winner=null;S.set1="";S.set2="";S.set3="";S.activeMatchId=null;S.screen="rank";save();render();
+    if(sb)sb.from("matches").update({winner:"x",played_at:playedAt,score:score}).eq("id",match.id).then(function(res){
+      if(res&&res.error)sb.from("matches").update({winner:"x",played_at:playedAt}).eq("id",match.id).then(function(){});
+    });
+  },
   _closeMatch:function(match,winnerKey,score){
+    if(winnerKey==="x"){A._closeDraw(match,score);return;}
     var winIdx=winnerKey==="a"?0:1,loseIdx=1-winIdx;
     var winners=match.teams[winIdx].players.map(function(p){return p.nick});
     var losers=match.teams[loseIdx].players.map(function(p){return p.nick});
@@ -1269,6 +1329,7 @@ function dayName(i){return DAYS[i]||"—"}
 /* blocco della proposta di risultato dentro la card della partita */
 function confirmBlock(m){
   if(!isProposed(m))return "";
+  var isDraw=m.winner==="x";
   var wi=m.winner==="b"?1:0;
   var vinc=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
   var pers=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
@@ -1278,8 +1339,11 @@ function confirmBlock(m){
   var testa='<div style="margin-top:12px;background:rgba(11,17,24,.6);border:1px solid rgba(255,255,255,.12);'+
     'border-radius:10px;padding:12px">'+
     '<div class="kick" style="margin-bottom:6px">Risultato proposto'+(m.proposedBy?" da "+esc(m.proposedBy):"")+'</div>'+
-    '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+esc(vinc)+'</div>'+
-    '<div style="font-size:12px;color:#8C99A8;margin-top:2px">batte '+esc(pers)+(m.score?' · '+esc(m.score):'')+'</div>';
+    (isDraw?
+      '<div style="font-size:14px;font-weight:700;color:#8C99A8">Pareggio</div>'+
+      '<div style="font-size:12px;color:#8C99A8;margin-top:2px">nessuno vince'+(m.score?' · '+esc(m.score):'')+'</div>':
+      '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+esc(vinc)+'</div>'+
+      '<div style="font-size:12px;color:#8C99A8;margin-top:2px">batte '+esc(pers)+(m.score?' · '+esc(m.score):'')+'</div>');
   if(needsMyVote(m)){
     var ioNick=myNick(),possoIo=possoConfermare(m,ioNick);
     return testa+
@@ -1297,7 +1361,9 @@ function confirmBlock(m){
   }
   var attesa='<div style="font-size:11px;color:#8C99A8;margin-top:10px">'+
     (restano.length?'Basta la conferma di '+esc(restano.join(" o ")):'Confermato')+'</div>';
-  var forza=isAdminUser()&&restano.length?
+  /* il bottone non compare proprio se l'amministratore gioca questa partita:
+     mostrarlo e poi bloccarlo al tocco sarebbe solo confuso */
+  var forza=isAdminUser()&&restano.length&&matchNicks(m).indexOf(myNick())===-1?
     '<div class="tapmute" onclick="A.forceResult(\''+esc(String(m.id))+'\')" '+
     'style="margin-top:10px;border:1px solid rgba(200,255,61,.4);color:#C8FF3D;border-radius:10px;height:44px;'+
     'display:grid;place-items:center;font-size:12px;font-weight:700">Convalida come amministratore</div>':'';
@@ -1397,13 +1463,15 @@ function home(){
       '<div class="anton" style="font-size:22px;margin-top:8px;color:#8C99A8">—</div>'+
       '<div style="font-size:12px;color:#8C99A8;margin-top:2px">nessun giocatore iscritto</div>')+'</div>';
   var recent=S.history.slice(0,3).map(function(m){
+    var isDraw=m.winner==="x";
     var wi=m.winner==="b"?1:0;
     var w=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
     var l=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
     return '<div style="display:flex;align-items:center;gap:10px;background:#141E2A;'+
     'border:0.5px solid #26313F;border-radius:12px;padding:12px 13px">'+
     '<div style="flex:1;min-width:0">'+
-    '<div style="font-size:13px;font-weight:600;color:#C8FF3D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(w)+'</div>'+
+    '<div style="font-size:13px;font-weight:600;color:'+(isDraw?"#8C99A8":"#C8FF3D")+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+    esc(w)+(isDraw?" · pareggio":"")+'</div>'+
     '<div style="font-size:12px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(l)+'</div></div>'+
     '<div style="font-size:12px;color:#8C99A8;text-align:right;flex-shrink:0">'+
     (m.score?esc(m.score):dayName(m.day)+" "+esc(m.slot))+'</div></div>'}).join("");
@@ -1602,7 +1670,15 @@ function resultScreen(){
   var opts=match.teams.map(function(t,i){var key=i===0?"a":"b",sel=S.winner===key,acc=i===0?"#C8FF3D":"#FF6A35";
     return '<div class="tapmute" onclick="A.pickWinner(\''+key+'\')" style="border-radius:14px;padding:16px;'+
     'background:'+(sel?"rgba(200,255,61,.12)":"#141E2A")+';border:2px solid '+(sel?acc:"rgba(255,255,255,.1)")+
-    ';font-weight:700;font-size:15px">'+esc(t.players[0].nick+" / "+t.players[1].nick)+'</div>'}).join("");
+    ';font-weight:700;font-size:15px">'+esc(t.players[0].nick+" / "+t.players[1].nick)+'</div>'}).join("")+
+    /* pareggio: quando davvero non c'è un vincitore (es. 1-1 nei set senza aver
+       giocato il terzo, partita interrotta) — non tocca ELO né vittorie/sconfitte
+       di nessuno, ma chiude comunque la partita invece di lasciarla per sempre
+       "da giocare" o doverla cancellare */
+    '<div class="tapmute" onclick="A.pickWinner(\'x\')" style="border-radius:14px;padding:16px;'+
+    'background:'+(S.winner==="x"?"rgba(140,153,168,.16)":"#141E2A")+';border:2px dashed '+
+    (S.winner==="x"?"#8C99A8":"rgba(255,255,255,.16)")+';font-weight:700;font-size:14px;'+
+    'color:#8C99A8;text-align:center">Pareggio — nessuno vince</div>';
   var inp=function(k,ph){return '<input value="'+esc(S[k])+'" oninput="A.field(\''+k+'\',this.value)" placeholder="'+ph+'" '+
     'style="flex:1;background:#141E2A;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:14px;'+
     'color:#FFFFFF;font-size:15px;text-align:center">'};
@@ -1880,7 +1956,14 @@ function mePicker(){
 function winStreak(nick){
   var s=0;
   for(var i=0;i<S.history.length;i++){
-    var m=S.history[i],wi=m.winner==="b"?1:0;
+    var m=S.history[i];
+    if(m.winner==="x"){
+      /* pareggio: non è una vittoria, quindi interrompe la striscia — ma solo
+         se il giocatore c'era davvero, altrimenti è una partita che non lo riguarda */
+      if(matchNicks(m).indexOf(nick)===-1)continue;
+      break;
+    }
+    var wi=m.winner==="b"?1:0;
     var won=m.teams[wi].players.some(function(p){return p.nick===nick});
     var lost=m.teams[1-wi].players.some(function(p){return p.nick===nick});
     if(!won&&!lost)continue;
@@ -2040,9 +2123,13 @@ function statsFor(nick){
     var squadra=m.teams[myTeam].players;
     var mine=squadra.filter(function(p){return p.nick===nick})[0];
     if(mine&&typeof mine.elo==="number")series.push(mine.elo);
+    if(m.playedAt)ultima=m.playedAt;
+    /* pareggio: non è né una vittoria né una sconfitta, quindi non entra nel
+       conteggio V/S né nelle statistiche di lato/compagni/avversari/circolo
+       che si basano tutte su un "won" che qui non esisterebbe davvero */
+    if(m.winner==="x")return;
     var won=myTeam===(m.winner==="b"?1:0);
     if(won)wins++;else losses++;
-    if(m.playedAt)ultima=m.playedAt;
     /* lato del campo: nella squadra il primo è a sinistra, il secondo a destra */
     var pos=squadra.map(function(p){return p.nick}).indexOf(nick);
     if(pos===0||pos===1)bump(lati,pos===0?"Sinistra":"Destra",won);
