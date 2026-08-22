@@ -74,8 +74,8 @@ var COURTS=[["Padel 22 · Campo 1","coperto, vetro nuovo","vedi app","#C8FF3D","
 ["Centogrigio · Campo 5","coperto","vedi app","#7FA8FF","cg"],
 ["Centogrigio · Campo 1 scoperto","scoperto","vedi app","#7FA8FF","cg"],
 ["Centogrigio · Campo 2 scoperto","scoperto","vedi app","#7FA8FF","cg"],
-["Nuova Saves · L'Arena","scoperto","vedi app","#FFD24D","nuovasaves"],
-["Nuova Saves · Campo in Erba","scoperto","vedi app","#FFD24D","nuovasaves"]];
+["Nuova Saves · Campo Arena","scoperto","vedi app","#FFD24D","nuovasaves"],
+["Nuova Saves · Campo Wimbledon","scoperto","vedi app","#FFD24D","nuovasaves"]];
 var TITLES={home:["La Gabbia","Turno 24 · martedì"],book:["Prenota","campo e orario"],
 pairs:["Coppie","bilanciate a ELO"],rank:["Classifica","punti ELO"],
 me:["Profilo","il tuo curriculum"],editme:["Modifica","aggiorna il tuo profilo"],add:["Nuovo matto","iscrivi un giocatore"],result:["Risultato","chi ha vinto?"],admedit:["Amministratore","modifica giocatore"],tour:["Torneo","tabellone a eliminazione"],
@@ -1594,7 +1594,9 @@ function book(){
   /* Accordion per circolo: si vede prima l'elenco dei 3 circoli (logo + nome),
      e solo aprendo quello giusto compaiono i suoi campi — evita di buttare giù
      tutti i campi di tutti i circoli insieme. */
-  var clubOrder=["p22","duma","cg","nuovasaves"];
+  /* ordine alfabetico per nome, non l'ordine in cui sono stati aggiunti —
+     così un nuovo circolo si inserisce da solo al posto giusto */
+  var clubOrder=Object.keys(CLUBS).sort(function(a,b){return CLUBS[a].name.localeCompare(CLUBS[b].name)});
   var clubsHtml=clubOrder.map(function(key){
     var club=CLUBS[key];
     var clubCourts=COURTS.map(function(c,i){return{c:c,i:i}}).filter(function(x){return x.c[4]===key});
