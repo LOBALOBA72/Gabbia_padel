@@ -1466,8 +1466,7 @@ function book(){
       '<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'+c[3]+'"></div>'+
       '<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">'+esc(c[0])+'</div>'+
       '<div style="margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+badge+
-      (dettaglio?'<span style="font-size:11px;color:#8C99A8">'+esc(dettaglio)+'</span>':'')+'</div></div>'+
-      '<div style="font-size:14px;font-weight:700;color:#C8FF3D;flex-shrink:0">'+c[2]+'</div></div>'}).join("");
+      (dettaglio?'<span style="font-size:11px;color:#8C99A8">'+esc(dettaglio)+'</span>':'')+'</div></div></div>'}).join("");
     return '<div style="display:flex;flex-direction:column;gap:8px">'+
     '<div class="tapmute" onclick="A.toggleClub(\''+key+'\')" style="display:flex;align-items:center;gap:12px;'+
     'border-radius:12px;padding:12px 14px;background:'+(open?"rgba(200,255,61,.06)":"#141E2A")+
@@ -1490,9 +1489,10 @@ function book(){
   '<div class="kick">Orari — '+esc(courtName(S.court))+'</div><div style="font-size:11px;color:#8C99A8">'+
   (Object.keys(taken).length?Object.keys(taken).length+" già prenotati dalla Gabbia":"nessuno ancora occupato")+'</div></div>'+
   '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+slots+'</div></div>'+
-  '<a href="'+CLUBS[COURTS[S.court][4]].url+'" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
+  (function(){var ctaKey=S.expandedClub||(COURTS[S.court]||[])[4]||"p22",ctaClub=CLUBS[ctaKey];
+  return '<a href="'+ctaClub.url+'" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
   'text-decoration:none;background:#141E2A;border:1px solid rgba(200,255,61,.3);border-radius:14px;padding:15px;'+
-  'color:#C8FF3D;font-weight:700;font-size:14px">Apri app '+CLUBS[COURTS[S.court][4]].name+' per prenotare davvero ↗</a>'+
+  'color:#C8FF3D;font-weight:700;font-size:14px">Apri app '+ctaClub.name+' per prenotare davvero ↗</a>'})()+
   '<div class="tapmute" onclick="A.confirm()" style="background:#C8FF3D;color:#0B1118;border-radius:14px;padding:17px;'+
   'text-align:center;font-weight:700;font-size:16px">Conferma '+dayName(S.day)+' '+esc(S.slot)+' · '+esc(courtName(S.court))+'</div>'+
   '<div style="font-size:11px;color:#8C99A8;text-align:center;line-height:1.5">Questa conferma è solo per organizzarvi nel gruppo — la prenotazione vera del campo va fatta sull\'app del circolo. '+
