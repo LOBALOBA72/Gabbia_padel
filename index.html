@@ -702,9 +702,14 @@ var A={
     var p=S.roster.filter(function(r){return r.nick===n})[0];
     if(!confirm("Eliminare "+n+" dalla Gabbia? L'operazione non si annulla."))return;
     S.roster=S.roster.filter(function(r){return r.nick!==n});save();render();
+    /* la cancellazione sul server è l'unica che conta davvero: se fallisce (rete,
+       errore) il giocatore sembra sparito solo perché rimosso in locale, ma
+       ricompare al primo sync — meglio avvisare subito invece di scoprirlo dopo */
     if(sb){
-      if(p&&p.id)sb.from("players").delete().eq("id",p.id).then(function(){});
-      else sb.from("players").delete().eq("nick",n).then(function(){});
+      var fatto=function(res){if(res&&res.error)alert("Eliminato qui, ma il server ha rifiutato la cancellazione: "+
+        res.error.message+"\n\nRiprova, o "+n+" potrebbe ricomparire.");};
+      if(p&&p.id)sb.from("players").delete().eq("id",p.id).then(fatto);
+      else sb.from("players").delete().eq("nick",n).then(fatto);
     }
   },
   add:function(){
