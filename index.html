@@ -1333,10 +1333,16 @@ function header(){
     'border:1px solid rgba(200,255,61,.3);border-radius:999px;padding:7px 12px;flex-shrink:0">'+
     '<div style="width:8px;height:8px;border-radius:50%;background:#C8FF3D"></div>'+
     '<div style="font-size:13px;font-weight:700">'+m.elo+' ELO</div></div>'):"";
+  /* nell'Album il sottotitolo non è una didascalia ma la seconda riga del
+     titolo ("ALBUM / DEI MATTI 2026"), quindi va grosso e in evidenza come
+     la copertina di un album vero */
+  var subHtml=S.screen==="album"?
+    '<div class="anton" style="font-size:19px;line-height:1;margin-top:3px;color:#C8FF3D">'+esc(sub)+'</div>':
+    '<div class="kick" style="margin-top:4px">'+esc(sub)+'</div>';
   return '<div style="padding:calc(env(safe-area-inset-top) + 14px) 20px 12px;display:flex;'+
   'align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.09);flex-shrink:0">'+
   '<div><div class="anton" style="font-size:26px;line-height:1">'+esc(t[0])+'</div>'+
-  '<div class="kick" style="margin-top:4px">'+esc(sub)+'</div></div>'+badge+'</div>';
+  subHtml+'</div>'+badge+'</div>';
 }
 
 /* iniziali da mostrare nel quadratino: dal nome vero se c'è, altrimenti dal soprannome */
