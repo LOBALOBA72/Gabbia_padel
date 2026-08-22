@@ -127,6 +127,7 @@ if(typeof S.addAsMe==="undefined")S.addAsMe=false;
 if(!S.rankFilter)S.rankFilter="m";
 if(!S.freeFilter)S.freeFilter="m";
 if(!S.albumFilter)S.albumFilter="m";
+if(typeof S.albumOpen==="undefined")S.albumOpen=null;
 if(typeof S.pairCombo==="undefined")S.pairCombo=null;
 if(!S.tourGironi)S.tourGironi=2;
 if(!S.torneiPassati)S.torneiPassati=[];
@@ -688,7 +689,9 @@ function balanced(){
 }
 
 var A={
-  nav:function(k){set("screen",k)},
+  /* cambiando schermata si chiude sempre la figurina aperta, altrimenti
+     tornando all'Album ci si ritroverebbe dentro quella di prima */
+  nav:function(k){S.albumOpen=null;set("screen",k)},
   pickDay:function(d){set("day",d)},
   pickSlot:function(t){set("slot",t)},
   pickCourt:function(i){S.expandedClub=(COURTS[i]||[])[4]||S.expandedClub;set("court",i)},
@@ -893,6 +896,8 @@ var A={
   pickRankFilter:function(f){S.rankFilter=f;save();render()},
   pickFreeFilter:function(f){S.freeFilter=f;save();render()},
   pickAlbumFilter:function(f){S.albumFilter=f;save();render()},
+  openFigurina:function(nick){S.albumOpen=nick;save();render()},
+  closeFigurina:function(){S.albumOpen=null;save();render()},
   pickTourSize:function(n){S.tourSize=n;save();render()},
   pickTourType:function(v){S.tourType=v;save();render()},
   pickTourGender:function(v){S.tourGender=v;save();render()},
@@ -1854,6 +1859,42 @@ function rank(){
 function albumScreen(){
   var filter=S.albumFilter||"m";
   var list=S.roster.filter(function(r){return filter==="f"?r.gender==="F":r.gender!=="F"});
+  /* figurina aperta a tutta pagina: qui la foto ci sta intera (contain) senza
+     doverla tagliare, perché lo spazio non è più un riquadro stretto */
+  if(S.albumOpen){
+    var ap=list.filter(function(r){return r.nick===S.albumOpen})[0];
+    if(ap){
+      var apNum=list.indexOf(ap)+1,apFoto=fotoDi(ap.nick);
+      var rec=parseRecord(ap.record);
+      return '<div class="tapmute" onclick="A.closeFigurina()" style="padding:16px 20px 28px;display:flex;'+
+      'flex-direction:column;gap:14px;min-height:100%">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
+      '<div style="background:#C8FF3D;color:#0B1118;font-weight:800;font-size:16px;width:38px;height:38px;'+
+      'border-radius:50%;display:grid;place-items:center;flex-shrink:0">'+apNum+'</div>'+
+      '<div style="font-size:13px;color:#8C99A8">tocca per chiudere ✕</div></div>'+
+      (apFoto?
+        /* <img> invece di uno sfondo con misura fissa: il riquadro prende
+           esattamente la forma della foto, così non restano bande vuote
+           sopra e sotto con le foto orizzontali */
+        '<img src="'+apFoto+'" style="width:100%;height:auto;display:block;border-radius:18px;'+
+        'border:1px solid rgba(255,255,255,.14)">':
+        '<div style="width:100%;aspect-ratio:3/4;border-radius:18px;background:rgba(255,255,255,.03);'+
+        'border:1px dashed rgba(255,255,255,.2);display:grid;place-items:center;color:#8C99A8;font-size:13px;'+
+        'text-align:center;padding:20px;line-height:1.6">Figurina da completare.<br>Manca ancora la foto.</div>')+
+      '<div style="text-align:center">'+
+      '<div class="anton" style="font-size:30px;line-height:1.1">'+esc(ap.nick)+'</div>'+
+      '<div style="font-size:14px;color:#8C99A8;margin-top:4px">'+
+      (ap.nationality?flagOf(ap.nationality)+' ':'')+esc(ap.name)+'</div></div>'+
+      '<div style="display:flex;gap:10px">'+
+      [[ap.elo,"ELO","#FFFFFF"],[rec.wins,"V","#C8FF3D"],[rec.draws,"P","#8C99A8"],[rec.losses,"S","#FF6A35"]]
+      .map(function(x){return '<div style="flex:1;min-width:0;background:#141E2A;border:0.5px solid #26313F;'+
+        'border-radius:12px;padding:12px 6px;text-align:center">'+
+        '<div style="font-size:19px;font-weight:700;color:'+x[2]+'">'+x[0]+'</div>'+
+        '<div style="font-size:10px;color:#8C99A8;letter-spacing:.06em;margin-top:2px">'+x[1]+'</div></div>'}).join("")+
+      '</div></div>';
+    }
+    S.albumOpen=null;
+  }
   var tabs=[["m","King"],["f","Queen"]].map(function(t){var on=filter===t[0];
     return '<div class="tapmute" onclick="A.pickAlbumFilter(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
     'padding:12px 6px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
@@ -1861,22 +1902,26 @@ function albumScreen(){
   var cards=list.map(function(r,i){
     var num=i+1,foto=fotoDi(r.nick);
     if(foto){
-      return '<div style="border-radius:14px;overflow:hidden;background:#141E2A;border:1px solid rgba(255,255,255,.14);'+
-      'height:156px;display:flex;flex-direction:column">'+
-      '<div style="position:relative;height:120px;flex-shrink:0;background:#0F1620">'+
-      /* "contain" invece di "cover": si vede tutta la foto, mai tagliata —
-         può lasciare un filo di sfondo ai lati se la foto non è quadrata,
-         ma è meglio che perdere un pezzo di faccia */
-      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:contain;'+
-      'background-repeat:no-repeat;background-position:center center"></div>'+
+      return '<div class="tapmute" onclick="A.openFigurina(\''+js(r.nick)+'\')" '+
+      'style="border-radius:14px;overflow:hidden;background:#141E2A;border:1px solid rgba(255,255,255,.14);'+
+      'height:250px;display:flex;flex-direction:column">'+
+      '<div style="position:relative;flex:1;min-height:0;background:#0F1620">'+
+      /* "cover" ancorato a destra: la foto riempie tutto il riquadro senza
+         bande vuote sopra e sotto, e l'eventuale taglio cade a sinistra —
+         dove nelle nostre foto c'è sfondo, non la persona. In verticale si
+         parte dal 20% invece che dal centro: nelle foto in piedi la faccia
+         sta in alto, e centrando la si tagliava via */
+      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;'+
+      'background-repeat:no-repeat;background-position:right 20%"></div>'+
       '<div style="position:absolute;top:6px;left:6px;background:#C8FF3D;color:#0B1118;font-weight:800;'+
       'font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center">'+num+'</div></div>'+
-      '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:4px 6px">'+
+      '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:7px 6px">'+
       '<div style="font-size:12px;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden;'+
       'text-overflow:ellipsis">'+esc(r.nick)+'</div></div></div>';
     }
-    return '<div style="border-radius:14px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.2);'+
-    'height:156px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px">'+
+    return '<div class="tapmute" onclick="A.openFigurina(\''+js(r.nick)+'\')" '+
+    'style="border-radius:14px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.2);'+
+    'height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px">'+
     '<div style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.08);color:#8C99A8;'+
     'font-weight:800;font-size:12px;display:grid;place-items:center">'+num+'</div>'+
     '<div style="font-size:12px;font-weight:700;color:#8C99A8;text-align:center;white-space:nowrap;overflow:hidden;'+
