@@ -2204,10 +2204,24 @@ function statsFor(nick){
     var mine=squadra.filter(function(p){return p.nick===nick})[0];
     if(mine&&typeof mine.elo==="number")series.push(mine.elo);
     if(m.playedAt)ultima=m.playedAt;
-    /* pareggio: conta a sé (non è né una vittoria né una sconfitta), ma non
-       entra nelle statistiche di lato/compagni/avversari/circolo che si
-       basano tutte su un "won" che qui non esisterebbe davvero */
-    if(m.winner==="x"){draws++;return;}
+    var isDraw=m.winner==="x";
+    /* i set contano comunque, pareggio o no: ogni set ha un vincitore vero
+       anche dentro una partita finita pari (es. 7-5 poi 1-6). Senza un
+       vincitore di partita a cui appoggiarsi, si segue la stessa convenzione
+       usata nel tabellone: i numeri della squadra A vengono scritti per primi */
+    var mioNumeroPrimo=isDraw?(myTeam===0):(myTeam===(m.winner==="a"?0:1));
+    var sets=parseScore(m.score),miei=0,loro=0;
+    sets.forEach(function(s){
+      var a=mioNumeroPrimo?s[0]:s[1],b=mioNumeroPrimo?s[1]:s[0];
+      miei+=a;loro+=b;
+      if(a>b)setV++;else if(b>a)setP++;
+    });
+    if(sets.length)giochiF+=miei,giochiS+=loro;
+    /* pareggio: conta a sé (non è né una vittoria né una sconfitta), e non
+       entra nelle statistiche di lato/compagni/avversari/circolo/orario né
+       nei record di vittoria/sconfitta più netta, che si basano tutte su un
+       "won" che qui non esisterebbe davvero */
+    if(isDraw){draws++;return;}
     var won=myTeam===(m.winner==="b"?1:0);
     if(won)wins++;else losses++;
     /* lato del campo: nella squadra il primo è a sinistra, il secondo a destra */
@@ -2217,18 +2231,10 @@ function statsFor(nick){
     m.teams[1-myTeam].players.forEach(function(p){bump(rivals,p.nick,won)});
     bump(clubs,(COURTS[m.court]||[])[4]||"?",won);
     bump(bands,slotBand(m.slot),won);
-    /* set e giochi, dal punteggio scritto a fine partita */
-    var sets=parseScore(m.score),miei=0,loro=0;
-    sets.forEach(function(s){
-      var a=won?s[0]:s[1],b=won?s[1]:s[0];
-      miei+=a;loro+=b;
-      if(a>b)setV++;else setP++;
-    });
     if(sets.length){
       if(won){if(sets.length<=2)v20++;else v21++;}
-      giochiF+=miei;giochiS+=loro;
       var scarto=miei-loro,etichetta=sets.map(function(s){
-        return (won?s[0]:s[1])+"-"+(won?s[1]:s[0])}).join(" ");
+        return (mioNumeroPrimo?s[0]:s[1])+"-"+(mioNumeroPrimo?s[1]:s[0])}).join(" ");
       var contro=m.teams[1-myTeam].players.map(function(p){return p.nick}).join(" / ");
       if(won&&(!migliore||scarto>migliore.scarto))migliore={scarto:scarto,score:etichetta,contro:contro};
       if(!won&&(!peggiore||scarto<peggiore.scarto))peggiore={scarto:scarto,score:etichetta,contro:contro};
