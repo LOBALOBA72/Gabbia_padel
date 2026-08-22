@@ -1339,23 +1339,41 @@ function courtName(i){return (COURTS[i]||["Campo da definire"])[0]}
 function dayName(i){return DAYS[i]||"—"}
 
 /* blocco della proposta di risultato dentro la card della partita */
+/* punteggio in stile tabellone da tennis: una riga per squadra, un numero
+   per set, allineato in verticale con l'altra squadra sullo stesso set —
+   invece di un testo unico tipo "7-5 1-6" difficile da abbinare a chi */
+function scoreboardHtml(nomeA,nomeB,winnerKey,scoreStr,colA,colB){
+  var sets=parseScore(scoreStr);
+  if(!sets.length)return "";
+  /* per convenzione si scrivono prima i giochi di chi ha vinto LA PARTITA: se
+     ha vinto la squadra B, il primo numero di ogni set è suo, non della A */
+  var aFirst=winnerKey!=="b";
+  var cella=function(v){return '<div style="width:20px;text-align:center;font-size:13px;font-weight:700">'+v+'</div>'};
+  var riga=function(nome,vals,col){return '<div style="display:flex;align-items:center;gap:8px">'+
+    '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:'+col+';white-space:nowrap;'+
+    'overflow:hidden;text-overflow:ellipsis">'+esc(nome)+'</div>'+
+    '<div style="display:flex;gap:3px;flex-shrink:0">'+vals.map(cella).join("")+'</div></div>'};
+  var valsA=sets.map(function(s){return aFirst?s[0]:s[1]});
+  var valsB=sets.map(function(s){return aFirst?s[1]:s[0]});
+  return '<div style="display:flex;flex-direction:column;gap:4px">'+riga(nomeA,valsA,colA)+riga(nomeB,valsB,colB)+'</div>';
+}
 function confirmBlock(m){
   if(!isProposed(m))return "";
   var isDraw=m.winner==="x";
-  var wi=m.winner==="b"?1:0;
-  var vinc=m.teams[wi].players.map(function(p){return p.nick}).join(" / ");
-  var pers=m.teams[1-wi].players.map(function(p){return p.nick}).join(" / ");
+  var nomeA=m.teams[0].players.map(function(p){return p.nick}).join(" / ");
+  var nomeB=m.teams[1].players.map(function(p){return p.nick}).join(" / ");
+  var colA=isDraw?"#FFFFFF":(m.winner==="a"?"#C8FF3D":"#8C99A8");
+  var colB=isDraw?"#FFFFFF":(m.winner==="b"?"#C8FF3D":"#8C99A8");
+  var board=scoreboardHtml(nomeA,nomeB,m.winner,m.score,colA,colB);
   /* solo la squadra avversaria di chi ha proposto conta ai fini della chiusura:
      un compagno di squadra direbbe sempre di sì, non è una verifica */
   var restano=avversariMancanti(m);
   var testa='<div style="margin-top:12px;background:rgba(11,17,24,.6);border:1px solid rgba(255,255,255,.12);'+
     'border-radius:10px;padding:12px">'+
-    '<div class="kick" style="margin-bottom:6px">Risultato proposto'+(m.proposedBy?" da "+esc(m.proposedBy):"")+'</div>'+
-    (isDraw?
-      '<div style="font-size:14px;font-weight:700;color:#8C99A8">Pareggio</div>'+
-      '<div style="font-size:12px;color:#8C99A8;margin-top:2px">nessuno vince'+(m.score?' · '+esc(m.score):'')+'</div>':
-      '<div style="font-size:14px;font-weight:700;color:#C8FF3D">'+esc(vinc)+'</div>'+
-      '<div style="font-size:12px;color:#8C99A8;margin-top:2px">batte '+esc(pers)+(m.score?' · '+esc(m.score):'')+'</div>');
+    '<div class="kick" style="margin-bottom:8px">Risultato proposto'+(m.proposedBy?" da "+esc(m.proposedBy):"")+
+    (isDraw?' — pareggio':'')+'</div>'+
+    (board||('<div style="font-size:13px;font-weight:700;color:'+colA+'">'+esc(nomeA)+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:'+colB+';margin-top:2px">'+esc(nomeB)+'</div>'));
   if(needsMyVote(m)){
     var ioNick=myNick(),possoIo=possoConfermare(m,ioNick);
     return testa+
