@@ -196,6 +196,13 @@ function chiediFotoMancanti(){
    migrazione non è stata eseguita si torna al vecchio elenco, per non chiudere fuori
    tutti. Il link è la chiave: chi lo gira ad altri regala la propria identità. */
 var CODICI_ATTIVI=null;
+/* diventa true appena entraConCodice() ha finito di controllare il codice
+   nell'indirizzo (trovato o no). Finché è false, se c'è un codice nell'URL
+   non si sa ancora chi sia: mostrare l'elenco/iscrizione in quella finestra
+   di tempo permetterebbe a chi apre il PROPRIO link di finire per sbaglio
+   su "iscriviti come nuovo giocatore" invece che aspettare di essere
+   riconosciuto — è così che si è creato un doppione in passato. */
+var codeCheckDone=false;
 function nuovoCodice(){
   var c="abcdefghijkmnopqrstuvwxyz23456789",s="";
   for(var i=0;i<8;i++)s+=c.charAt(Math.floor(Math.random()*c.length));
@@ -210,8 +217,9 @@ function codiceDaUrl(){
 }
 async function entraConCodice(){
   var code=codiceDaUrl();
-  if(!code||!sb)return false;
+  if(!code||!sb){codeCheckDone=true;return false;}
   var res=await sb.from("players").select("id,nick").eq("access_code",code).limit(1);
+  codeCheckDone=true;
   if(res.error||!res.data||!res.data[0])return false;
   S.me=res.data[0].id;save();
   /* il codice RESTA nell'indirizzo, apposta. Toglierlo sembrava più pulito, ma chi
@@ -449,14 +457,14 @@ function pulisciTorneiChiusi(rows){
   sb.from("tournaments").delete().in("id",vecchi).then(function(){});
 }
 async function initSync(){
-  if(!sb)return;
+  if(!sb){codeCheckDone=true;return;}
   try{
     var pl=await sb.from("players").select("id,nick,name,elo,gender,wins,losses,last_delta,nationality,is_admin");
     if(!pl.error)applyPlayers(pl.data);
     /* i codici NON viaggiano con l'elenco: si controlla solo se la colonna esiste */
     var probe=await sb.from("players").select("access_code").limit(1);
     CODICI_ATTIVI=!probe.error;
-    if(CODICI_ATTIVI)await entraConCodice();
+    if(CODICI_ATTIVI)await entraConCodice();else codeCheckDone=true;
     var mt=await sb.from("matches").select("*").order("created_at");
     if(!mt.error)applyMatches(mt.data);
     var pn=await sb.from("penalties").select("*").order("created_at");
@@ -470,7 +478,7 @@ async function initSync(){
       .on("postgres_changes",{event:"*",schema:"public",table:"penalties"},function(){refetch("penalties")})
       .on("postgres_changes",{event:"*",schema:"public",table:"tournaments"},function(){refetch("tournaments")})
       .subscribe();
-  }catch(e){}
+  }catch(e){codeCheckDone=true;}
 }
 
 /* i 4 in campo, risolti sul roster vero: gli slot che puntano a un nick
@@ -1816,6 +1824,15 @@ function adminEditScreen(){
   '<div class="tapmute" onclick="A.remove(\''+js(p.nick)+'\')" style="text-align:center;font-size:12px;color:#FF6A35;padding:8px">'+
   'Elimina '+esc(p.nick)+' dalla Gabbia</div></div>';
 }
+/* schermata neutra mentre si verifica un codice trovato nell'indirizzo:
+   niente elenco, niente "iscriviti", solo un attimo di attesa */
+function attesaCodice(){
+  return '<div class="pad" style="gap:16px;align-items:center;text-align:center;padding-top:60px">'+
+  '<div style="width:32px;height:32px;border-radius:50%;border:3px solid rgba(200,255,61,.25);'+
+  'border-top-color:#C8FF3D;animation:spin 0.8s linear infinite"></div>'+
+  '<div style="font-size:13px;color:#8C99A8">Un attimo, ti sto riconoscendo…</div></div>'+
+  '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+}
 function mePicker(){
   var rows=S.roster.map(function(r){return '<div class="tapmute" onclick="A.pickMe(\''+js(r.id||r.nick)+'\')" '+
     'style="display:flex;justify-content:space-between;align-items:center;background:#141E2A;'+
@@ -1824,8 +1841,11 @@ function mePicker(){
     '<div style="font-size:13px;color:#C8FF3D;font-weight:700">'+r.elo+'</div></div>'}).join("");
   /* con i link personali attivi non si sceglie pi\u00f9 dall'elenco: si entra dal proprio
      link. L'elenco resta solo per l'amministratore che ha sbloccato con il PIN \u2014
-     \u00e8 anche la via di rientro se perde il telefono o svuota la cache. */
-  if(CODICI_ATTIVI&&!S.isAdmin){
+     \u00e8 anche la via di rientro se perde il telefono o svuota la cache.
+     "!==false" invece di un semplice check verit\u00e0: finch\u00e9 non si sa ancora se i
+     codici sono attivi (CODICI_ATTIVI \u00e8 ancora null, probe non finito) si resta
+     bloccati per prudenza, non si apre l'elenco/iscrizione "per default" */
+  if(CODICI_ATTIVI!==false&&!S.isAdmin){
     return '<div class="pad" style="gap:16px">'+
     '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:16px;padding:20px;'+
     'text-align:center;line-height:1.6">'+
@@ -2889,7 +2909,13 @@ function render(){
   if(S.me&&S.roster.length&&!myPlayer()){S.me=null;save();}
   if(!S.me){
     bar.style.display="none";
-    view.innerHTML=header()+'<div class="scroll">'+(S.screen==="add"?addScreen():mePicker())+'</div>';
+    /* c'è un codice nell'indirizzo ma non si sa ancora se è valido: niente
+       elenco né "iscriviti" finché non lo sappiamo, altrimenti chi apre il
+       PROPRIO link rischia di iscriversi di nuovo per sbaglio prima che
+       l'app faccia in tempo a riconoscerlo */
+    var inAttesaDiCodice=codiceDaUrl()&&!codeCheckDone;
+    view.innerHTML=header()+'<div class="scroll">'+
+      (inAttesaDiCodice?attesaCodice():(S.screen==="add"?addScreen():mePicker()))+'</div>';
     writeScroll(view,pos,stessa);
     return;
   }
