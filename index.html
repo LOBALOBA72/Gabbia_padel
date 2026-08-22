@@ -2192,7 +2192,7 @@ function dataBreve(iso){
 }
 function statsFor(nick){
   var played=S.history.slice().reverse(); /* dal più vecchio al più recente */
-  var series=[],wins=0,losses=0,partners={},rivals={},clubs={},bands={};
+  var series=[],wins=0,draws=0,losses=0,partners={},rivals={},clubs={},bands={};
   var lati={Sinistra:{w:0,l:0},Destra:{w:0,l:0}};
   var setV=0,setP=0,giochiF=0,giochiS=0,v20=0,v21=0,ultima=null;
   var migliore=null,peggiore=null;
@@ -2204,10 +2204,10 @@ function statsFor(nick){
     var mine=squadra.filter(function(p){return p.nick===nick})[0];
     if(mine&&typeof mine.elo==="number")series.push(mine.elo);
     if(m.playedAt)ultima=m.playedAt;
-    /* pareggio: non è né una vittoria né una sconfitta, quindi non entra nel
-       conteggio V/S né nelle statistiche di lato/compagni/avversari/circolo
-       che si basano tutte su un "won" che qui non esisterebbe davvero */
-    if(m.winner==="x")return;
+    /* pareggio: conta a sé (non è né una vittoria né una sconfitta), ma non
+       entra nelle statistiche di lato/compagni/avversari/circolo che si
+       basano tutte su un "won" che qui non esisterebbe davvero */
+    if(m.winner==="x"){draws++;return;}
     var won=myTeam===(m.winner==="b"?1:0);
     if(won)wins++;else losses++;
     /* lato del campo: nella squadra il primo è a sinistra, il secondo a destra */
@@ -2236,7 +2236,7 @@ function statsFor(nick){
   });
   var cur=(S.roster.filter(function(r){return r.nick===nick})[0]||{}).elo;
   if(typeof cur==="number")series.push(cur);
-  return{series:series,wins:wins,losses:losses,games:wins+losses,
+  return{series:series,wins:wins,draws:draws,losses:losses,games:wins+draws+losses,
     partners:partners,rivals:rivals,clubs:clubs,bands:bands,lati:lati,
     setV:setV,setP:setP,giochiF:giochiF,giochiS:giochiS,v20:v20,v21:v21,
     migliore:migliore,peggiore:peggiore,ultima:ultima,
@@ -2308,11 +2308,22 @@ function statsScreen(){
     (sparkline(st.series)||'<div style="font-size:12px;color:#8C99A8">Serve almeno una partita in più per disegnare la curva.</div>')+
     '<div style="display:flex;justify-content:space-between;font-size:11px;color:#8C99A8;margin-top:8px">'+
     '<div>minimo '+min+'</div><div>massimo '+max+'</div></div></div>';
-  var grid=[[String(st.games),"Partite"],[st.wins+"V · "+st.losses+"S","Bilancio"],[pct(st.wins,st.losses)+"%","Vittorie"]]
-    .map(function(s){return '<div style="background:#141E2A;border:0.5px solid #26313F;'+
+  var miniTile=function(valore,etichetta){return '<div style="background:#141E2A;border:0.5px solid #26313F;'+
     'border-radius:12px;padding:16px;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;height:88px">'+
-    '<div style="font-size:13px;color:#8C99A8">'+s[1]+'</div>'+
-    '<div style="font-size:20px;font-weight:600;color:#FFFFFF;text-align:right">'+esc(s[0])+'</div></div>'}).join("");
+    '<div style="font-size:13px;color:#8C99A8">'+etichetta+'</div>'+
+    '<div style="font-size:20px;font-weight:600;color:#FFFFFF;text-align:right">'+esc(valore)+'</div></div>'};
+  /* bilancio come tre numeri separati e colorati, non un testo unico tipo
+     "3V · 1P · 2S" che con i pareggi aggiunti non ci sta più in una riga */
+  var bilancioTile='<div style="background:#141E2A;border:0.5px solid #26313F;'+
+    'border-radius:12px;padding:16px;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;height:88px">'+
+    '<div style="font-size:13px;color:#8C99A8">Bilancio</div>'+
+    '<div style="display:flex;justify-content:space-between;gap:4px">'+
+    [[st.wins,"V","#C8FF3D"],[st.draws,"P","#8C99A8"],[st.losses,"S","#FF6A35"]].map(function(x){
+      return '<div style="text-align:center;flex:1;min-width:0">'+
+      '<div style="font-size:18px;font-weight:700;color:'+x[2]+'">'+x[0]+'</div>'+
+      '<div style="font-size:10px;color:#8C99A8;letter-spacing:.06em">'+x[1]+'</div></div>'}).join("")+
+    '</div></div>';
+  var grid=miniTile(String(st.games),"Partite")+bilancioTile+miniTile(pct(st.wins,st.losses)+"%","Vittorie");
   var partner=bestOf(st.partners,"compagno"),rival=bestOf(st.rivals,"rivale");
   var duoHtml="";
   if(partner)duoHtml+=highlightRow("♥","Compagno d'oro: "+partner.nick,
