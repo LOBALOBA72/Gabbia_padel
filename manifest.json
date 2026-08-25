@@ -1,7 +1,6 @@
 {
   "name": "La Gabbia dei Matti del Padel",
   "short_name": "Gabbia Padel",
-  "start_url": "/",
   "display": "standalone",
   "background_color": "#0B1118",
   "theme_color": "#0B1118",
