@@ -788,10 +788,13 @@ var A={
         if(wasSignup){S.me=np.id;}
         save();render();
       };
-      /* se la colonna nationality non esiste ancora, si reinserisce senza */
-      sb.from("players").insert([Object.assign({},base,{nationality:np.nationality})]).select()
+      /* si chiedono indietro solo id e nick, non tutta la riga: dopo la
+         migrazione sicurezza il codice di accesso non è più leggibile, e
+         farsi restituire "tutto" farebbe fallire l'inserimento.
+         Se la colonna nationality non esiste ancora, si reinserisce senza. */
+      sb.from("players").insert([Object.assign({},base,{nationality:np.nationality})]).select("id,nick")
         .then(function(res){
-          if(res.error)sb.from("players").insert([base]).select().then(fatto);
+          if(res.error)sb.from("players").insert([base]).select("id,nick").then(fatto);
           else fatto(res);
         });
     }
