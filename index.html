@@ -1840,15 +1840,29 @@ function rank(){
      tolti: dicevano la stessa cosa del podio, dove il primo ha già corona,
      ritratto grande e punteggio. */
   /* corona disegnata, solo sopra il primo classificato */
-  var corona='<svg viewBox="0 0 32 22" width="34" height="23" style="display:block;margin:0 auto 4px" '+
+  /* due corone diverse: quella del King a punte, quella della Queen più
+     arrotondata e con le perle, come un diadema */
+  var coronaRe='<svg viewBox="0 0 32 22" width="34" height="23" style="display:block;margin:0 auto 4px" '+
     'aria-hidden="true"><path d="M2.5 19.5h27l2-15-8.7 5.7L16 1.5 9.2 10.2.5 4.5l2 15z" '+
     'fill="#C8FF3D"/></svg>';
+  var coronaRegina='<svg viewBox="0 0 32 24" width="34" height="25" style="display:block;margin:0 auto 4px" '+
+    'aria-hidden="true">'+
+    '<path d="M3.5 21.5h25c.6 0 1-.4 1-1V12c0-1.2-1.4-1.8-2.3-1L23 14.6c-.6.5-1.6.3-1.9-.5L17.4 7c-.6-1.2-2.3-1.2-2.9 0'+
+    'l-3.7 7.1c-.4.8-1.3 1-1.9.5L4.8 11c-.9-.8-2.3-.2-2.3 1v8.5c0 .6.4 1 1 1z" fill="#C8FF3D"/>'+
+    '<circle cx="16" cy="3.4" r="2.4" fill="#C8FF3D"/>'+
+    '<circle cx="2.6" cy="8.4" r="2" fill="#C8FF3D"/>'+
+    '<circle cx="29.4" cy="8.4" r="2" fill="#C8FF3D"/></svg>';
+  var corona=filter==="f"?coronaRegina:coronaRe;
+  /* colori del podio: oro (il lime dell'app), argento e bronzo. Prima il
+     secondo e il terzo avevano un bordo bianco quasi trasparente, che sulle
+     foto chiare spariva e sembrava un difetto di disegno. */
+  var anelli=["#C8FF3D","#C7D0DC","#CD8C52"];
   /* niente riquadri: solo tre ritratti tondi, il primo più grande e più in
      alto. Chi non ha la foto mostra le iniziali dentro lo stesso cerchio,
      così il podio resta uguale per tutti. */
   var pod=[1,0,2].map(function(i){var vuoto=!list[i];
     var r=list[i]||{nick:"—",elo:0,delta:""},f=i===0;
-    var foto=fotoDi(r.nick),anello=f?"#C8FF3D":"rgba(255,255,255,.22)";
+    var foto=fotoDi(r.nick),anello=anelli[i];
     /* la colonna del primo è più larga delle altre, così il suo cerchio può
        essere davvero più grande. Le misure sono in percentuale con un tetto
        massimo: sui telefoni stretti rimpiccioliscono invece di uscire fuori. */
@@ -1867,13 +1881,13 @@ function rank(){
       '<div style="'+tondo+'background-image:url(\''+foto+'\');'+
       'background-size:cover;background-position:72% 20%;background-color:#0F1620;'+
       'border:3px solid '+anello+'"></div>':
-      '<div style="'+tondo+'background:rgba(200,255,61,.10);'+
-      'border:3px solid '+anello+';display:grid;place-items:center;color:'+(f?"#C8FF3D":"#8C99A8")+';'+
+      '<div style="'+tondo+'background:rgba(255,255,255,.05);'+
+      'border:3px solid '+anello+';display:grid;place-items:center;color:'+anello+';'+
       'font-weight:700;font-size:'+(f?34:25)+'px;letter-spacing:.03em">'+esc(initialsOf(r.nick))+'</div>';
     return '<div style="'+colonna+'">'+
     (f?corona:'')+cerchio+
     '<div class="anton" style="font-size:'+(f?24:19)+'px;line-height:1;margin-top:2px;color:'+
-    (f?"#C8FF3D":"#8C99A8")+'">'+(i+1)+'°</div>'+
+    anello+'">'+(i+1)+'°</div>'+
     '<div style="font-size:'+(f?15:13)+'px;font-weight:700;max-width:100%;white-space:nowrap;'+
     'overflow:hidden;text-overflow:ellipsis">'+esc(r.nick)+'</div>'+
     '<div style="font-size:11px;color:#8C99A8">'+r.elo+'</div></div>'}).join("");
@@ -1897,7 +1911,10 @@ function rank(){
   /* chi non ha ancora giocato non compare in classifica (ha senso per tutti),
      ma l'amministratore deve comunque poterlo raggiungere per modificarlo o
      eliminarlo — altrimenti quei profili diventano irraggiungibili */
-  var nonGiocato=isAdminUser()?S.roster.filter(function(r){return !haGiocato(r)})
+  /* segue lo stesso selettore della classifica: con King solo gli uomini,
+     con Queen solo le donne */
+  var nonGiocato=isAdminUser()?S.roster.filter(function(r){
+      return !haGiocato(r)&&(filter==="f"?r.gender==="F":r.gender!=="F")})
     .sort(function(a,b){return a.nick.localeCompare(b.nick)}):[];
   var nonGiocatoRows=nonGiocato.map(function(r){
     return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
