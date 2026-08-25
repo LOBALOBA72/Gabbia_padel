@@ -1850,22 +1850,36 @@ function rank(){
   var corona='<svg viewBox="0 0 32 22" width="28" height="19" style="display:block;margin:0 auto 5px" '+
     'aria-hidden="true"><path d="M2.5 19.5h27l2-15-8.7 5.7L16 1.5 9.2 10.2.5 4.5l2 15z" '+
     'fill="#C8FF3D"/></svg>';
-  var pod=[1,0,2].map(function(i){var r=list[i]||{nick:"—",elo:0,delta:""},f=i===0;
-    var foto=fotoDi(r.nick),d=f?54:44;
-    /* la foto compare solo se c'è: chi non l'ha carica resta com'era prima */
-    var ritratto=foto?
-      '<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;margin:0 auto 6px;'+
-      'background-image:url(\''+foto+'\');background-size:cover;background-position:72% 20%;'+
-      'border:2px solid '+(f?"#C8FF3D":"rgba(255,255,255,.25)")+'"></div>':'';
-    return '<div style="flex:1;min-width:0;background:'+(f?"linear-gradient(180deg,rgba(200,255,61,.18),#141E2A)":"#141E2A")+
-    ';border:1px solid '+(f?"rgba(200,255,61,.5)":"rgba(255,255,255,.12)")+
-    ';border-radius:16px 16px 8px 8px;padding:12px 8px;height:'+(f?"212px":i===1?"186px":"166px")+
-    ';display:flex;flex-direction:column;justify-content:flex-end;gap:3px;text-align:center">'+
-    (f?corona:'')+ritratto+
-    '<div class="anton" style="font-size:24px;color:'+(f?"#C8FF3D":"#8C99A8")+';line-height:1">'+(i+1)+'°</div>'+
-    '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.nick)+'</div>'+
-    '<div style="font-size:11px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
-    r.elo+' · '+esc(r.delta)+'</div></div>'}).join("");
+  /* niente riquadri: solo tre ritratti tondi, il primo più grande e più in
+     alto. Chi non ha la foto mostra le iniziali dentro lo stesso cerchio,
+     così il podio resta uguale per tutti. */
+  var pod=[1,0,2].map(function(i){var vuoto=!list[i];
+    var r=list[i]||{nick:"—",elo:0,delta:""},f=i===0;
+    var foto=fotoDi(r.nick),d=f?104:76,anello=f?"#C8FF3D":"rgba(255,255,255,.22)";
+    /* posto ancora libero (meno di tre giocatori): un cerchio tratteggiato e
+       niente numeri, invece di un ritratto vuoto con uno zero sotto */
+    if(vuoto){
+      return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;'+
+      'gap:6px;text-align:center;margin-top:'+(f?"0":"30px")+';opacity:.45">'+
+      '<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;border:2px dashed rgba(255,255,255,.25)"></div>'+
+      '<div class="anton" style="font-size:'+(f?22:18)+'px;line-height:1;margin-top:2px;color:#8C99A8">'+(i+1)+'°</div>'+
+      '<div style="font-size:11px;color:#8C99A8">libero</div></div>';
+    }
+    var cerchio=foto?
+      '<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;background-image:url(\''+foto+'\');'+
+      'background-size:cover;background-position:72% 20%;background-color:#0F1620;'+
+      'border:3px solid '+anello+'"></div>':
+      '<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;background:rgba(200,255,61,.10);'+
+      'border:3px solid '+anello+';display:grid;place-items:center;color:'+(f?"#C8FF3D":"#8C99A8")+';'+
+      'font-weight:700;font-size:'+(f?30:22)+'px;letter-spacing:.03em">'+esc(initialsOf(r.nick))+'</div>';
+    return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;'+
+    'gap:6px;text-align:center;margin-top:'+(f?"0":"30px")+'">'+
+    (f?corona:'')+cerchio+
+    '<div class="anton" style="font-size:'+(f?22:18)+'px;line-height:1;margin-top:2px;color:'+
+    (f?"#C8FF3D":"#8C99A8")+'">'+(i+1)+'°</div>'+
+    '<div style="font-size:'+(f?15:13)+'px;font-weight:700;max-width:100%;white-space:nowrap;'+
+    'overflow:hidden;text-overflow:ellipsis">'+esc(r.nick)+'</div>'+
+    '<div style="font-size:11px;color:#8C99A8">'+r.elo+'</div></div>'}).join("");
   var rows=list.map(function(r,i){
     var dc=r.delta.indexOf("+")===0?"#C8FF3D":r.delta.indexOf("-")===0?"#FF6A35":"#8C99A8";
     var me=isMe(r);
@@ -1910,7 +1924,7 @@ function rank(){
   kq+
   '<div><div class="kick" style="margin:4px 0 -4px">Classifiche</div></div>'+
   '<div style="display:flex;gap:8px">'+tabs+'</div>'+
-  '<div style="display:flex;gap:8px;align-items:flex-end">'+pod+'</div>'+
+  '<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0 6px">'+pod+'</div>'+
   '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>'+
   nonGiocatoHtml+
   '<div class="tapmute" onclick="A.nav(\'album\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
