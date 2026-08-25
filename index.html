@@ -1846,14 +1846,26 @@ function rank(){
   '<div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#FF6A35">Queen of the Padel</div>'+
   '<div class="anton" style="font-size:22px;margin-top:8px">'+(queen?esc(queen.nick):"—")+'</div>'+
   '<div style="font-size:12px;color:#8C99A8;margin-top:2px">'+(queen?queen.elo:0)+' ELO</div></div></div>';
+  /* corona disegnata, solo sopra il primo classificato */
+  var corona='<svg viewBox="0 0 32 22" width="28" height="19" style="display:block;margin:0 auto 5px" '+
+    'aria-hidden="true"><path d="M2.5 19.5h27l2-15-8.7 5.7L16 1.5 9.2 10.2.5 4.5l2 15z" '+
+    'fill="#C8FF3D"/></svg>';
   var pod=[1,0,2].map(function(i){var r=list[i]||{nick:"—",elo:0,delta:""},f=i===0;
-    return '<div style="flex:1;background:'+(f?"linear-gradient(180deg,rgba(200,255,61,.18),#141E2A)":"#141E2A")+
+    var foto=fotoDi(r.nick),d=f?54:44;
+    /* la foto compare solo se c'è: chi non l'ha carica resta com'era prima */
+    var ritratto=foto?
+      '<div style="width:'+d+'px;height:'+d+'px;border-radius:50%;margin:0 auto 6px;'+
+      'background-image:url(\''+foto+'\');background-size:cover;background-position:72% 20%;'+
+      'border:2px solid '+(f?"#C8FF3D":"rgba(255,255,255,.25)")+'"></div>':'';
+    return '<div style="flex:1;min-width:0;background:'+(f?"linear-gradient(180deg,rgba(200,255,61,.18),#141E2A)":"#141E2A")+
     ';border:1px solid '+(f?"rgba(200,255,61,.5)":"rgba(255,255,255,.12)")+
-    ';border-radius:16px 16px 8px 8px;padding:14px 10px;height:'+(f?"168px":i===1?"146px":"128px")+
-    ';display:flex;flex-direction:column;justify-content:flex-end;gap:4px">'+
-    '<div class="anton" style="font-size:26px;color:'+(f?"#C8FF3D":"#8C99A8")+';line-height:1">'+(i+1)+'°</div>'+
-    '<div style="font-size:15px;font-weight:700">'+esc(r.nick)+'</div>'+
-    '<div style="font-size:11px;color:#8C99A8">'+r.elo+' · '+esc(r.delta)+'</div></div>'}).join("");
+    ';border-radius:16px 16px 8px 8px;padding:12px 8px;height:'+(f?"212px":i===1?"186px":"166px")+
+    ';display:flex;flex-direction:column;justify-content:flex-end;gap:3px;text-align:center">'+
+    (f?corona:'')+ritratto+
+    '<div class="anton" style="font-size:24px;color:'+(f?"#C8FF3D":"#8C99A8")+';line-height:1">'+(i+1)+'°</div>'+
+    '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.nick)+'</div>'+
+    '<div style="font-size:11px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+    r.elo+' · '+esc(r.delta)+'</div></div>'}).join("");
   var rows=list.map(function(r,i){
     var dc=r.delta.indexOf("+")===0?"#C8FF3D":r.delta.indexOf("-")===0?"#FF6A35":"#8C99A8";
     var me=isMe(r);
