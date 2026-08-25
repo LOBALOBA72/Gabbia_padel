@@ -231,11 +231,23 @@ function codiceDaUrl(){
 async function entraConCodice(){
   var code=codiceDaUrl();
   if(!code||!sb){codeCheckDone=true;return false;}
-  var res=await sb.from("players").select("id,nick").eq("access_code",code).limit(1);
+  /* prima si prova la funzione protetta (esiste dopo la migrazione
+     sicurezza: verifica il codice senza permettere di elencarli tutti),
+     poi si ricade sul vecchio modo. Così l'app funziona sia prima sia
+     dopo la migrazione, senza un momento in cui nessuno riesce a entrare. */
+  var trovato=null;
+  try{
+    var rpc=await sb.rpc("entra_con_codice",{codice:code});
+    if(!rpc.error&&rpc.data&&rpc.data[0])trovato=rpc.data[0];
+  }catch(e){}
+  if(!trovato){
+    var res=await sb.from("players").select("id,nick").eq("access_code",code).limit(1);
+    if(!res.error&&res.data&&res.data[0])trovato=res.data[0];
+  }
   codeCheckDone=true;
-  if(res.error||!res.data||!res.data[0])return false;
+  if(!trovato)return false;
   try{localStorage.setItem("gabbia.code",code)}catch(e){}
-  S.me=res.data[0].id;save();
+  S.me=trovato.id;save();
   /* il codice RESTA nell'indirizzo, apposta. Toglierlo sembrava più pulito, ma chi
      salva l'icona in Home Screen dopo aver aperto il link cattura l'indirizzo così
      com'è in quel momento — e su iPhone quell'icona apre spesso una memoria separata
@@ -480,9 +492,18 @@ async function initSync(){
   try{
     var pl=await sb.from("players").select("id,nick,name,elo,gender,wins,draws,losses,last_delta,nationality,is_admin");
     if(!pl.error)applyPlayers(pl.data);
-    /* i codici NON viaggiano con l'elenco: si controlla solo se la colonna esiste */
-    var probe=await sb.from("players").select("access_code").limit(1);
-    CODICI_ATTIVI=!probe.error;
+    /* i codici NON viaggiano con l'elenco. Si controlla solo che il sistema
+       dei link esista, in uno dei due modi: la funzione protetta (dopo la
+       migrazione sicurezza) oppure la vecchia colonna leggibile (prima).
+       Attenzione: se questo controllo dicesse "no" per sbaglio, l'app
+       tornerebbe al vecchio elenco aperto con "iscriviti" — cioè
+       esattamente il buco che i link personali servono a chiudere. */
+    var probeRpc=await sb.rpc("entra_con_codice",{codice:"__controllo__"});
+    if(!probeRpc.error){CODICI_ATTIVI=true;}
+    else{
+      var probe=await sb.from("players").select("access_code").limit(1);
+      CODICI_ATTIVI=!probe.error;
+    }
     if(CODICI_ATTIVI)await entraConCodice();else codeCheckDone=true;
     var mt=await sb.from("matches").select("*").order("created_at");
     if(!mt.error)applyMatches(mt.data);
@@ -722,12 +743,25 @@ var A={
     var p=S.roster.filter(function(r){return r.nick===n})[0];
     if(!confirm("Eliminare "+n+" dalla Gabbia? L'operazione non si annulla."))return;
     S.roster=S.roster.filter(function(r){return r.nick!==n});save();render();
-    /* la cancellazione sul server è l'unica che conta davvero: se fallisce (rete,
-       errore) il giocatore sembra sparito solo perché rimosso in locale, ma
-       ricompare al primo sync — meglio avvisare subito invece di scoprirlo dopo */
+    /* la cancellazione sul server è l'unica che conta davvero: se fallisce, il
+       giocatore sembra sparito solo perché tolto in locale, ma ricompare al
+       primo sync. Dopo la migrazione sicurezza il server la rifiuta di proposito
+       e — attenzione — lo fa SENZA errore, semplicemente non cancellando nulla:
+       per questo non basta guardare res.error, bisogna ricontrollare davvero. */
     if(sb){
-      var fatto=function(res){if(res&&res.error)alert("Eliminato qui, ma il server ha rifiutato la cancellazione: "+
-        res.error.message+"\n\nRiprova, o "+n+" potrebbe ricomparire.");};
+      var verifica=function(){
+        sb.from("players").select("id").eq("nick",n).limit(1).then(function(c){
+          if(c&&!c.error&&c.data&&c.data.length){
+            alert("Il server non ha cancellato "+n+": i giocatori sono protetti dalla "+
+              "cancellazione dall'app.\n\nPer eliminarlo davvero usa lo script "+
+              "admin-gabbia.py sul computer.\n\n"+n+" ricomparirà al prossimo aggiornamento.");
+          }
+        });
+      };
+      var fatto=function(res){
+        if(res&&res.error){alert("Il server ha rifiutato la cancellazione: "+res.error.message);return;}
+        verifica();
+      };
       if(p&&p.id)sb.from("players").delete().eq("id",p.id).then(fatto);
       else sb.from("players").delete().eq("nick",n).then(fatto);
     }
@@ -855,7 +889,10 @@ var A={
     /* il codice si chiede solo adesso, per questo giocatore: non viaggia mai
        insieme all'elenco di tutti */
     if(sb&&p.id)sb.from("players").select("access_code").eq("id",p.id).limit(1).then(function(res){
-      if(res.error||!res.data||!res.data[0])return;
+      /* dopo la migrazione sicurezza i codici non sono più leggibili dall'app:
+         è voluto, è ciò che impedisce a chiunque abbia il link del sito di
+         entrare come un altro. I link si prendono da inviti-giocatori.txt */
+      if(res.error||!res.data||!res.data[0]){S.adminCode="non-leggibile";save();render();return;}
       var code=res.data[0].access_code;
       if(!code){
         code=nuovoCodice();
@@ -2084,7 +2121,12 @@ function adminEditScreen(){
   /* il link personale da mandare al giocatore */
   (CODICI_ATTIVI===false?'':
    '<div><div class="kick" style="margin-bottom:6px">Link personale</div>'+
-   (S.adminCode?
+   (S.adminCode==="non-leggibile"?
+     '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:14px;'+
+     'font-size:12px;color:#8C99A8;line-height:1.6">I codici non sono più leggibili dall\'app: è voluto, '+
+     'è ciò che impedisce a chiunque conosca l\'indirizzo del sito di entrare come un altro.<br><br>'+
+     'Il link di '+esc(p.nick)+' lo trovi nel file <b>inviti-giocatori.txt</b> sul computer.</div>':
+    S.adminCode?
      '<div style="background:#141E2A;border:0.5px solid #26313F;border-radius:12px;padding:12px">'+
      '<div style="font-size:12px;color:#C8FF3D;word-break:break-all;line-height:1.5">'+
      esc(linkDi(S.adminCode))+'</div>'+
