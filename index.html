@@ -1830,22 +1830,15 @@ function rank(){
   var haGiocato=function(r){var rec=parseRecord(r.record);return rec.wins>0||rec.draws>0||rec.losses>0};
   var males=S.roster.filter(function(r){return r.gender!=="F"&&haGiocato(r)});
   var females=S.roster.filter(function(r){return r.gender==="F"&&haGiocato(r)});
-  var king=males[0],queen=females[0];
   var filter=S.rankFilter||"m";
   var list=filter==="f"?females:males;
   var tabs=[["m","King of the Padel"],["f","Queen of the Padel"]].map(function(t){var on=filter===t[0];
     return '<div class="tapmute" onclick="A.pickRankFilter(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:12px;'+
     'padding:12px 6px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
     ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:12px">'+t[1]+'</div>'}).join("");
-  var kq='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-  '<div style="background:linear-gradient(160deg,#1A2432,#0F1620);border:1px solid rgba(200,255,61,.3);border-radius:16px;padding:14px">'+
-  '<div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#C8FF3D">King of the Padel</div>'+
-  '<div class="anton" style="font-size:22px;margin-top:8px">'+(king?esc(king.nick):"—")+'</div>'+
-  '<div style="font-size:12px;color:#8C99A8;margin-top:2px">'+(king?king.elo:0)+' ELO</div></div>'+
-  '<div style="background:linear-gradient(160deg,#271826,#1A1015);border:1px solid rgba(255,106,53,.3);border-radius:16px;padding:14px">'+
-  '<div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#FF6A35">Queen of the Padel</div>'+
-  '<div class="anton" style="font-size:22px;margin-top:8px">'+(queen?esc(queen.nick):"—")+'</div>'+
-  '<div style="font-size:12px;color:#8C99A8;margin-top:2px">'+(queen?queen.elo:0)+' ELO</div></div></div>';
+  /* i due riquadri "King/Queen of the Padel" che stavano qui sopra sono stati
+     tolti: dicevano la stessa cosa del podio, dove il primo ha già corona,
+     ritratto grande e punteggio. */
   /* corona disegnata, solo sopra il primo classificato */
   var corona='<svg viewBox="0 0 32 22" width="28" height="19" style="display:block;margin:0 auto 5px" '+
     'aria-hidden="true"><path d="M2.5 19.5h27l2-15-8.7 5.7L16 1.5 9.2 10.2.5 4.5l2 15z" '+
@@ -1921,7 +1914,6 @@ function rank(){
   (isAdminUser()?'<div class="tapmute" onclick="A.nav(\'add\')" style="display:flex;align-items:center;justify-content:center;gap:8px;'+
   'background:#141E2A;border:1px dashed rgba(200,255,61,.4);border-radius:12px;padding:14px;color:#C8FF3D;'+
   'font-weight:700;font-size:14px">+ Iscrivi un nuovo matto</div>':'')+
-  kq+
   '<div><div class="kick" style="margin:4px 0 -4px">Classifiche</div></div>'+
   '<div style="display:flex;gap:8px">'+tabs+'</div>'+
   '<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0 6px">'+pod+'</div>'+
