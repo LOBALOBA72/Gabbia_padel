@@ -1172,7 +1172,15 @@ var A={
     if(sb)sb.from("matches").insert([{day:match.day,slot:match.slot,court:match.court,stake:match.stake,
       team_a:teamA,team_b:teamB}]).select().then(function(res){
         /* sostituisce l'id provvisorio con quello vero, così "Segna risultato" funziona subito */
-        if(res.error||!res.data||!res.data[0])return;
+        if(res.error||!res.data||!res.data[0]){
+          /* senza questo avviso la partita restava solo su questo telefono: bella e visibile
+             finché non si ricaricava l'app, poi spariva senza spiegazione perché il server
+             non l'aveva mai ricevuta (successo con rete debole al campo) */
+          alert("Attenzione: la partita non è stata salvata sul server (manca la rete?).\n\n"+
+            "Per ora la vedi solo tu su questo telefono: se non riesci a risalvarla sparirà "+
+            "al prossimo aggiornamento dell'app, anche sul tuo. Riprova appena hai connessione.");
+          return;
+        }
         var realId=res.data[0].id;
         S.matches=S.matches.map(function(m){return m.id===match.id?Object.assign({},m,{id:realId}):m});
         save();render();
@@ -1645,7 +1653,10 @@ function book(){
   var isToday=upcoming[0].dow===S.day;
   var nowMin=new Date().getHours()*60+new Date().getMinutes();
   var slots=TIMES.map(function(t){
-    var busy=!!taken[t],past=isToday&&slotMinutes(t)<=nowMin,free=!busy&&!past;
+    /* un orario "passato" oggi resta comunque selezionabile: senza prenotazione
+       diretta dei campi, serve per registrare a mente fredda una partita già
+       giocata ma non ancora segnata prima che passi l'ora */
+    var busy=!!taken[t],past=isToday&&slotMinutes(t)<=nowMin,free=!busy;
     var on=S.slot===t&&free;
     var note=busy?"occupato":past?"passato":"libero";
     return '<div '+(free?'class="tapmute" onclick="A.pickSlot(\''+t+'\')"':'')+
