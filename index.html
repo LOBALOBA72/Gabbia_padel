@@ -737,7 +737,7 @@ var A={
     if(S.selectedSlot===null)return;
     if(busyNicks(S.day,S.slot)[nick])return;
     var lineup=S.lineup.slice();lineup[S.selectedSlot]=nick;
-    S.lineup=lineup;S.selectedSlot=null;save();render();
+    S.lineup=lineup;S.selectedSlot=null;S.benchQuery="";save();render();
   },
   remove:function(n){
     var p=S.roster.filter(function(r){return r.nick===n})[0];
@@ -1368,7 +1368,8 @@ var A={
     var p=S.penalties[i];
     if(sb&&p.id)sb.from("penalties").update({done:p.done}).eq("id",p.id).then(function(){});
   },
-  field:function(k,v){S[k]=v;save()}
+  field:function(k,v){S[k]=v;save()},
+  benchSearch:function(v){S.benchQuery=v;save();render()}
 };
 
 function todayLabel(){
@@ -1591,7 +1592,7 @@ function home(){
       '<div style="font-size:12px;color:#8C99A8;margin-top:2px">'+champ.elo+' ELO · '+esc(champ.record||"")+'</div>':
       '<div class="anton" style="font-size:22px;margin-top:8px;color:#8C99A8">—</div>'+
       '<div style="font-size:12px;color:#8C99A8;margin-top:2px">nessun giocatore iscritto</div>')+'</div>';
-  var recent=S.history.slice(0,3).map(function(m){
+  var recent=S.history.slice(0,8).map(function(m){
     var isDraw=m.winner==="x";
     var nomeA=m.teams[0].players.map(function(p){return p.nick}).join(" / ");
     var nomeB=m.teams[1].players.map(function(p){return p.nick}).join(" / ");
@@ -1773,14 +1774,31 @@ function pairs(){
     esc(ROASTS[(S.pairSeed*2+i)%ROASTS.length])+'</div></div>'}).join("");
   var active=S.selectedSlot!==null;
   var busy=busyNicks(S.day,S.slot);
-  var benchPool=S.roster.filter(function(x){return S.lineup.indexOf(x.nick)===-1});
-  var bench=benchPool.length?benchPool.map(function(x){var isBusy=!!busy[x.nick];
+  /* in ordine alfabetico invece che per ELO (l'ordine del roster): con una ventina
+     abbondante di iscritti trovare qualcuno in un elenco che salta di ELO era una
+     caccia al tesoro. La ricerca sopra filtra ulteriormente per nome o soprannome. */
+  var benchAll=S.roster.filter(function(x){return S.lineup.indexOf(x.nick)===-1})
+    .sort(function(a,b){return a.nick.localeCompare(b.nick)});
+  var q=String(S.benchQuery||"").trim().toLowerCase();
+  var benchPool=q?benchAll.filter(function(x){
+    return x.nick.toLowerCase().indexOf(q)!==-1||String(x.name||"").toLowerCase().indexOf(q)!==-1;
+  }):benchAll;
+  var cerca=!benchAll.length?"":
+    '<div style="position:relative;margin-bottom:10px">'+
+    '<input id="benchSearch" value="'+esc(S.benchQuery||"")+'" oninput="A.benchSearch(this.value)" '+
+    'placeholder="Cerca in panchina..." style="width:100%;background:#141E2A;'+
+    'border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:12px 40px 12px 15px;'+
+    'color:#FFFFFF;font-size:14px">'+
+    (q?'<div class="tapmute" onclick="A.benchSearch(\'\')" style="position:absolute;right:10px;top:50%;'+
+    'transform:translateY(-50%);color:#8C99A8;font-size:16px;line-height:1;padding:4px">✕</div>':'')+'</div>';
+  var bench=!benchAll.length?'<div style="font-size:12px;color:#8C99A8">Nessuno in panchina: sono già tutti in campo.</div>':
+    !benchPool.length?'<div style="font-size:12px;color:#8C99A8">Nessuno trovato per "'+esc(S.benchQuery)+'".</div>':
+    benchPool.map(function(x){var isBusy=!!busy[x.nick];
     return '<div '+((active&&!isBusy)?'class="tapmute" onclick="A.swapBench(\''+js(x.nick)+'\')"':'')+
     ' style="display:flex;align-items:center;gap:8px;background:#141E2A;border:1px solid rgba(255,255,255,.12);'+
     'border-radius:999px;padding:11px 15px;font-size:14px;opacity:'+((active&&!isBusy)?"1":"0.4")+'">'+
     '<span style="font-weight:700">'+esc(x.nick)+'</span>'+
-    '<span style="color:#8C99A8;font-size:11px">'+(isBusy?"già impegnato":x.elo)+'</span></div>'}).join(""):
-    '<div style="font-size:12px;color:#8C99A8">Nessuno in panchina: sono già tutti in campo.</div>';
+    '<span style="color:#8C99A8;font-size:11px">'+(isBusy?"già impegnato":x.elo)+'</span></div>'}).join("");
   var hint=active?"Giocatore selezionato ✓ — ora tocca chi lo sostituisce dalla panchina.":
     "① Tocca un giocatore in campo qui sopra (si evidenzia) — ② poi tocca chi vuoi far entrare qui sotto.";
   var chips=["4 birre","Porti le palline","Foto con la fascetta"].map(function(c){
@@ -1794,7 +1812,7 @@ function pairs(){
   '<div class="tapmute" onclick="A.shuffle()" style="border:1px solid rgba(255,255,255,.2);border-radius:12px;'+
   'padding:13px 16px;font-size:14px;font-weight:700;white-space:nowrap">Rimescola</div></div>'+
   '<div style="display:flex;flex-direction:column;gap:10px">'+teams+'</div>'+
-  '<div><div class="kick" style="margin-bottom:10px">'+hint+'</div>'+
+  '<div><div class="kick" style="margin-bottom:10px">'+hint+'</div>'+cerca+
   '<div style="display:flex;flex-wrap:wrap;gap:8px">'+bench+'</div></div>'+
   '<div><div class="kick" style="margin-bottom:10px">Penitenza in palio (opzionale)</div>'+
   '<input value="'+esc(S.stake)+'" oninput="A.field(\'stake\',this.value)" placeholder="es. 4 birre per chi perde" '+
@@ -3321,9 +3339,25 @@ function writeScroll(view,pos,stessaSchermata){
   var b=view.querySelector(".bkt-scroll");
   if(b&&pos.x)b.scrollLeft=pos.x;
 }
+/* stesso problema dello scroll ma per il cursore: un campo di ricerca che si
+   aggiorna a ogni tasto (es. cerca giocatore in panchina) perde il focus a ogni
+   render perché #view viene riscritto da zero. Si salva quale campo era attivo
+   e dove stava il cursore, e si rimette com'era dopo la riscrittura. */
+function readFocus(view){
+  var el=document.activeElement;
+  if(!el||!view.contains(el)||!el.id)return null;
+  return{id:el.id,start:el.selectionStart,end:el.selectionEnd};
+}
+function writeFocus(view,f){
+  if(!f)return;
+  var el=view.querySelector("#"+f.id);
+  if(!el)return;
+  el.focus();
+  if(typeof f.start==="number"&&el.setSelectionRange)try{el.setSelectionRange(f.start,f.end)}catch(e){}
+}
 function render(){
   var view=document.getElementById("view"),bar=document.getElementById("tabbar");
-  var pos=readScroll(view),stessa=(lastScreen===S.screen);
+  var pos=readScroll(view),foc=readFocus(view),stessa=(lastScreen===S.screen);
   lastScreen=S.screen;
   /* se l'identità salvata non corrisponde più a nessuno nel roster (soprannome
      cambiato, giocatore eliminato) si tornerebbe "fantasmi": si vede tutto ma non
@@ -3338,7 +3372,7 @@ function render(){
     var inAttesaDiCodice=codiceDaUrl()&&!codeCheckDone;
     view.innerHTML=header()+'<div class="scroll">'+
       (inAttesaDiCodice?attesaCodice():(S.screen==="add"?addScreen():mePicker()))+'</div>';
-    writeScroll(view,pos,stessa);
+    writeScroll(view,pos,stessa);writeFocus(view,foc);
     return;
   }
   bar.style.display="block";
@@ -3361,7 +3395,7 @@ function render(){
       'Qualcosa si è inceppato</div>'+
       '<div style="font-size:13px;color:#8C99A8">Chiudi e riapri l\'app. Se continua, scrivi a MASSICCIO.</div></div></div>';}
   }
-  writeScroll(view,pos,stessa);
+  writeScroll(view,pos,stessa);writeFocus(view,foc);
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
