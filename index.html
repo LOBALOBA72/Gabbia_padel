@@ -39,6 +39,9 @@
   .bkt-scroll::-webkit-scrollbar{height:0;}
   .dayscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;padding:0 20px;}
   .dayscroll::-webkit-scrollbar{height:0;}
+  .wheel-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none;}
+  .wheel-scroll::-webkit-scrollbar{height:0;}
+  .wheel-card{scroll-snap-align:center;flex:0 0 auto;transition:transform .12s ease-out,opacity .12s ease-out;}
 </style>
 </head>
 <body>
@@ -1791,14 +1794,28 @@ function pairs(){
     'color:#FFFFFF;font-size:14px">'+
     (q?'<div class="tapmute" onclick="A.benchSearch(\'\')" style="position:absolute;right:10px;top:50%;'+
     'transform:translateY(-50%);color:#8C99A8;font-size:16px;line-height:1;padding:4px">✕</div>':'')+'</div>';
+  /* la panchina come una ruota di foto che si fa scorrere, non più un elenco piatto:
+     scorrendola la faccia al centro si ingrandisce (vedi wheelUpdate/initBenchWheel più
+     sotto, richiamata da render() dopo aver riscritto lo schermo), e si sceglie
+     toccando la card, esattamente come prima con swapBench. */
   var bench=!benchAll.length?'<div style="font-size:12px;color:#8C99A8">Nessuno in panchina: sono già tutti in campo.</div>':
     !benchPool.length?'<div style="font-size:12px;color:#8C99A8">Nessuno trovato per "'+esc(S.benchQuery)+'".</div>':
+    '<div id="benchWheel" class="wheel-scroll" style="display:flex;gap:16px;padding:8px calc(50% - 39px) 12px">'+
     benchPool.map(function(x){var isBusy=!!busy[x.nick];
-    return '<div '+((active&&!isBusy)?'class="tapmute" onclick="A.swapBench(\''+js(x.nick)+'\')"':'')+
-    ' style="display:flex;align-items:center;gap:8px;background:#141E2A;border:1px solid rgba(255,255,255,.12);'+
-    'border-radius:999px;padding:11px 15px;font-size:14px;opacity:'+((active&&!isBusy)?"1":"0.4")+'">'+
-    '<span style="font-weight:700">'+esc(x.nick)+'</span>'+
-    '<span style="color:#8C99A8;font-size:11px">'+(isBusy?"già impegnato":x.elo)+'</span></div>'}).join("");
+    var foto=fotoDi(x.nick);
+    var avatar=foto?
+      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-position:right center"></div>':
+      '<div style="width:100%;height:100%;background:rgba(200,255,61,.14);color:#C8FF3D;display:grid;'+
+      'place-items:center;font-size:19px;font-weight:700">'+esc(initialsOf(x.nick))+'</div>';
+    return '<div class="wheel-card'+((active&&!isBusy)?' tapmute':'')+'" '+
+    ((active&&!isBusy)?'onclick="A.swapBench(\''+js(x.nick)+'\')"':'')+
+    ' style="width:78px;text-align:center;opacity:.45">'+
+    '<div style="width:64px;height:64px;border-radius:50%;overflow:hidden;margin:0 auto;'+
+    'border:2px solid '+(isBusy?"rgba(255,106,53,.5)":"rgba(255,255,255,.16)")+'">'+avatar+'</div>'+
+    '<div style="font-size:11px;font-weight:700;margin-top:6px;white-space:nowrap;overflow:hidden;'+
+    'text-overflow:ellipsis">'+esc(x.nick)+'</div>'+
+    '<div style="font-size:9px;color:#8C99A8">'+(isBusy?"già impegnato":x.elo)+'</div></div>'}).join("")+
+    '</div>';
   var hint=active?"Giocatore selezionato ✓ — ora tocca chi lo sostituisce dalla panchina.":
     "① Tocca un giocatore in campo qui sopra (si evidenzia) — ② poi tocca chi vuoi far entrare qui sotto.";
   var chips=["4 birre","Porti le palline","Foto con la fascetta"].map(function(c){
@@ -3399,9 +3416,34 @@ function render(){
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
+  if(S.screen==="pairs")requestAnimationFrame(initBenchWheel);
   /* le schermate appena disegnate hanno segnato di quali foto hanno bisogno:
      si chiedono adesso, tutte insieme, e solo quelle mancanti */
   chiediFotoMancanti();
+}
+/* la ruota della panchina: chi sta al centro si ingrandisce e torna a piena
+   opacità, gli altri si rimpiccioliscono man mano che si allontanano — così
+   scorrerla con un dito dà davvero la sensazione di una ruota, non di una lista. */
+function wheelUpdate(el){
+  var rect=el.getBoundingClientRect(),cx=rect.left+rect.width/2;
+  var cards=el.querySelectorAll(".wheel-card");
+  for(var i=0;i<cards.length;i++){
+    var c=cards[i],r=c.getBoundingClientRect();
+    var d=Math.abs((r.left+r.width/2)-cx);
+    var t=Math.max(0,1-d/120);
+    c.style.transform="scale("+(0.72+0.34*t).toFixed(3)+")";
+    c.style.opacity=(0.4+0.6*t).toFixed(2);
+  }
+}
+function initBenchWheel(){
+  var el=document.getElementById("benchWheel");
+  if(!el)return;
+  var raf=null;
+  el.addEventListener("scroll",function(){
+    if(raf)return;
+    raf=requestAnimationFrame(function(){wheelUpdate(el);raf=null});
+  },{passive:true});
+  wheelUpdate(el);
 }
 /* se il link viene aperto quando l'app è già in esecuzione cambia solo la parte dopo
    il #, e lo script non riparte: senza questo, toccare il proprio link non farebbe nulla */
