@@ -1373,7 +1373,8 @@ var A={
     if(sb&&p.id)sb.from("penalties").update({done:p.done}).eq("id",p.id).then(function(){});
   },
   field:function(k,v){S[k]=v;save()},
-  benchSearch:function(v){S.benchQuery=v;save();render()}
+  benchSearch:function(v){S.benchQuery=v;save();render()},
+  freeSearch:function(v){S.freeQuery=v;save();render()}
 };
 
 function todayLabel(){
@@ -1436,6 +1437,14 @@ function photoBox(nick,h){
 }
 function courtName(i){return (COURTS[i]||["Campo da definire"])[0]}
 function dayName(i){return DAYS[i]||"—"}
+/* le partite salvano solo il giorno della settimana (0-6), non una data vera:
+   per mostrare "30" accanto a "Lunedì" si cerca a quale dei prossimi 7 giorni
+   corrisponde — funziona perché una partita in sospeso è sempre entro la
+   settimana in cui è stata prenotata, mai più vecchia */
+function dayNumFor(dow){
+  var u=upcomingDays(7).filter(function(x){return x.dow===dow})[0];
+  return u?u.num:null;
+}
 
 /* blocco della proposta di risultato dentro la card della partita */
 /* punteggio in stile tabellone da tennis: una riga per squadra, un numero
@@ -1515,25 +1524,45 @@ function home(){
   });
   var liberiTutti=S.roster.filter(function(r){return !impegnatiOggi[r.nick]});
   var freeFilter=S.freeFilter||"m";
-  var liberi=liberiTutti.filter(function(r){return freeFilter==="f"?r.gender==="F":r.gender!=="F"});
+  var liberiGender=liberiTutti.filter(function(r){return freeFilter==="f"?r.gender==="F":r.gender!=="F"});
   var freeTabs=[["m","King"],["f","Queen"]].map(function(t){var on=freeFilter===t[0];
     return '<div class="tapmute" onclick="A.pickFreeFilter(\''+t[0]+'\')" style="flex:1;text-align:center;border-radius:10px;'+
     'padding:8px 6px;background:'+(on?"#C8FF3D":"#141E2A")+';border:1px solid '+(on?"#C8FF3D":"rgba(255,255,255,.16)")+
     ';color:'+(on?"#0B1118":"#FFFFFF")+';font-weight:700;font-size:11px">'+t[1]+'</div>'}).join("");
-  var signups=liberi.length?liberi.map(function(r){
-    return '<div style="display:flex;align-items:center;gap:12px;background:#141E2A;'+
-    'border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 13px">'+
-    '<div style="width:34px;height:34px;border-radius:9px;background:rgba(200,255,61,.14);color:#C8FF3D;'+
-    'display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0">'+esc(initialsOf(r.nick))+'</div>'+
-    '<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;white-space:nowrap;'+
-    'overflow:hidden;text-overflow:ellipsis">'+
-    (r.nationality?'<span style="font-size:13px">'+flagOf(r.nationality)+'</span> ':'')+esc(r.nick)+'</div>'+
-    '<div style="font-size:11px;color:#8C99A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
-    esc(r.name)+'</div></div>'+
-    '<div style="font-size:13px;color:#C8FF3D;font-weight:700;flex-shrink:0">'+r.elo+'</div></div>'}).join(""):
+  /* stessa idea della ruota in Coppie: cerchi con foto invece di righe testuali,
+     con la ricerca sopra per trovare qualcuno appena i liberi diventano tanti.
+     Qui è solo consultazione (nessun tocco per invitarlo), quindi niente onclick. */
+  var fq=String(S.freeQuery||"").trim().toLowerCase();
+  var liberi=fq?liberiGender.filter(function(r){
+    return r.nick.toLowerCase().indexOf(fq)!==-1||String(r.name||"").toLowerCase().indexOf(fq)!==-1;
+  }):liberiGender;
+  var cercaLiberi=!liberiGender.length?"":
+    '<div style="position:relative;margin-bottom:10px">'+
+    '<input id="freeSearch" value="'+esc(S.freeQuery||"")+'" oninput="A.freeSearch(this.value)" '+
+    'placeholder="Cerca chi è libero..." style="width:100%;background:#141E2A;'+
+    'border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:12px 40px 12px 15px;'+
+    'color:#FFFFFF;font-size:14px">'+
+    (fq?'<div class="tapmute" onclick="A.freeSearch(\'\')" style="position:absolute;right:10px;top:50%;'+
+    'transform:translateY(-50%);color:#8C99A8;font-size:16px;line-height:1;padding:4px">✕</div>':'')+'</div>';
+  var signups=!liberiGender.length?
     '<div style="background:#141E2A;border:1px dashed rgba(255,255,255,.16);border-radius:12px;'+
     'padding:16px;text-align:center;color:#8C99A8;font-size:12px">'+
     (liberiTutti.length?"Nessun"+(freeFilter==="f"?"a Queen libera":" King libero")+" oggi.":"Oggi giocano tutti. Nessuno in panchina.")+
+    '</div>':
+    !liberi.length?'<div style="font-size:12px;color:#8C99A8">Nessuno trovato per "'+esc(S.freeQuery)+'".</div>':
+    '<div id="freeWheel" class="wheel-scroll" style="display:flex;gap:14px;padding:20px calc(50% - 48px) 14px">'+
+    liberi.map(function(r){
+      var foto=fotoDi(r.nick);
+      var avatar=foto?
+        '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-position:right center"></div>':
+        '<div style="width:100%;height:100%;background:rgba(200,255,61,.14);color:#C8FF3D;display:grid;'+
+        'place-items:center;font-size:24px;font-weight:700">'+esc(initialsOf(r.nick))+'</div>';
+      return '<div class="wheel-card" style="width:96px;text-align:center;opacity:.4">'+
+      '<div class="wheel-avatar" style="width:84px;height:84px;border-radius:50%;overflow:hidden;margin:0 auto;'+
+      'border:2px solid rgba(255,255,255,.16)">'+avatar+'</div>'+
+      '<div style="font-size:13px;font-weight:700;margin-top:10px;white-space:nowrap;overflow:hidden;'+
+      'text-overflow:ellipsis">'+(r.nationality?flagOf(r.nationality)+" ":"")+esc(r.nick)+'</div>'+
+      '<div style="font-size:10px;color:#8C99A8">'+r.elo+'</div></div>'}).join("")+
     '</div>';
   var matchesHtml;
   if(S.matches.length===0){
@@ -1564,7 +1593,8 @@ function home(){
       return '<div style="border-radius:16px;overflow:hidden;background:linear-gradient(180deg,#1A2432,#0F1620);'+
       'border:1px solid '+(needsMyVote(m)?"rgba(255,106,53,.5)":"rgba(200,255,61,.22)")+';padding:16px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
-      '<div><div class="anton" style="font-size:24px;line-height:1">'+dayName(m.day)+' '+esc(m.slot)+'</div>'+
+      '<div><div class="anton" style="font-size:24px;line-height:1">'+dayName(m.day)+
+      (dayNumFor(m.day)?" "+dayNumFor(m.day):"")+' · '+esc(m.slot)+'</div>'+
       '<div style="font-size:12px;color:#8C99A8;margin-top:4px">'+esc(courtName(m.court))+'</div></div>'+
       '<div style="display:flex;gap:6px;flex-shrink:0">'+azione+
       (canCancel?'<div class="tapmute" onclick="A.cancelMatch(\''+esc(String(m.id))+'\')" '+
@@ -1623,8 +1653,8 @@ function home(){
   '<div class="kick">Chi è libero oggi</div>'+
   '<div class="tapmute" onclick="A.nav(\'book\')" style="font-size:12px;color:#8C99A8;text-decoration:underline;'+
   'flex-shrink:0">+ organizza</div></div>'+
-  '<div style="display:flex;gap:8px;margin-bottom:10px">'+freeTabs+'</div>'+
-  '<div style="display:flex;flex-direction:column;gap:8px">'+signups+'</div></div>'+
+  '<div style="display:flex;gap:8px;margin-bottom:10px">'+freeTabs+'</div>'+cercaLiberi+
+  signups+'</div>'+
   recentHtml+'</div>';
 }
 
@@ -3378,9 +3408,26 @@ function writeFocus(view,f){
   el.focus();
   if(typeof f.start==="number"&&el.setSelectionRange)try{el.setSelectionRange(f.start,f.end)}catch(e){}
 }
+/* stesso problema ancora, ma per lo scorrimento orizzontale delle ruote (Coppie
+   e "Chi è libero"): un re-render può arrivare in qualunque momento — una foto
+   scaricata in background, un aggiornamento dal server — senza che l'utente
+   abbia toccato nulla, e senza questo la ruota tornava di scatto all'inizio
+   ogni volta, anche mentre la si stava scorrendo con un dito. */
+var WHEEL_IDS=["benchWheel","freeWheel"];
+function readWheels(view){
+  var out={};
+  WHEEL_IDS.forEach(function(id){var el=view.querySelector("#"+id);if(el)out[id]=el.scrollLeft});
+  return out;
+}
+function writeWheels(view,pos){
+  WHEEL_IDS.forEach(function(id){
+    var el=view.querySelector("#"+id);
+    if(el&&pos&&(id in pos))el.scrollLeft=pos[id];
+  });
+}
 function render(){
   var view=document.getElementById("view"),bar=document.getElementById("tabbar");
-  var pos=readScroll(view),foc=readFocus(view),stessa=(lastScreen===S.screen);
+  var pos=readScroll(view),foc=readFocus(view),wheels=readWheels(view),stessa=(lastScreen===S.screen);
   lastScreen=S.screen;
   /* se l'identità salvata non corrisponde più a nessuno nel roster (soprannome
      cambiato, giocatore eliminato) si tornerebbe "fantasmi": si vede tutto ma non
@@ -3418,11 +3465,12 @@ function render(){
       'Qualcosa si è inceppato</div>'+
       '<div style="font-size:13px;color:#8C99A8">Chiudi e riapri l\'app. Se continua, scrivi a MASSICCIO.</div></div></div>';}
   }
-  writeScroll(view,pos,stessa);writeFocus(view,foc);
+  writeScroll(view,pos,stessa);writeFocus(view,foc);writeWheels(view,wheels);
   if(!tabsReady){TB.init();tabsReady=true;TB.select(tabIndex(),true);}
   else TB.select(tabIndex());
   if(S.screen==="tour"&&S.tournament&&S.tournament.type==="elim")requestAnimationFrame(drawBracketLines);
-  if(S.screen==="pairs")requestAnimationFrame(initBenchWheel);
+  if(S.screen==="pairs")requestAnimationFrame(function(){initWheel("benchWheel")});
+  if(S.screen==="home")requestAnimationFrame(function(){initWheel("freeWheel")});
   /* le schermate appena disegnate hanno segnato di quali foto hanno bisogno:
      si chiedono adesso, tutte insieme, e solo quelle mancanti */
   chiediFotoMancanti();
@@ -3444,8 +3492,8 @@ function wheelUpdate(el){
     c.style.opacity=(0.35+0.65*t).toFixed(2);
   }
 }
-function initBenchWheel(){
-  var el=document.getElementById("benchWheel");
+function initWheel(id){
+  var el=document.getElementById(id);
   if(!el)return;
   var raf=null;
   el.addEventListener("scroll",function(){
