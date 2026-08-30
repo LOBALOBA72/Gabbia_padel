@@ -41,7 +41,8 @@
   .dayscroll::-webkit-scrollbar{height:0;}
   .wheel-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none;}
   .wheel-scroll::-webkit-scrollbar{height:0;}
-  .wheel-card{scroll-snap-align:center;flex:0 0 auto;transition:transform .12s ease-out,opacity .12s ease-out;}
+  .wheel-card{scroll-snap-align:center;flex:0 0 auto;transition:opacity .12s ease-out;}
+  .wheel-avatar{transition:transform .12s ease-out;}
 </style>
 </head>
 <body>
@@ -1800,7 +1801,12 @@ function pairs(){
      toccando la card, esattamente come prima con swapBench. */
   var bench=!benchAll.length?'<div style="font-size:12px;color:#8C99A8">Nessuno in panchina: sono già tutti in campo.</div>':
     !benchPool.length?'<div style="font-size:12px;color:#8C99A8">Nessuno trovato per "'+esc(S.benchQuery)+'".</div>':
-    '<div id="benchWheel" class="wheel-scroll" style="display:flex;gap:14px;padding:10px calc(50% - 48px) 14px">'+
+    /* padding verticale generoso: il cerchio si ingrandisce fino a 1.35x restando
+       al suo posto (si scala solo lui, non tutta la card - altrimenti il nome e
+       l'ELO sotto slittavano verso il basso, finendo sotto la sezione successiva),
+       ma anche solo il cerchio deve avere spazio per crescere senza finire sotto
+       la ricerca sopra o il nome sotto */
+    '<div id="benchWheel" class="wheel-scroll" style="display:flex;gap:14px;padding:20px calc(50% - 48px) 14px">'+
     benchPool.map(function(x){var isBusy=!!busy[x.nick];
     var foto=fotoDi(x.nick);
     var avatar=foto?
@@ -1810,9 +1816,9 @@ function pairs(){
     return '<div class="wheel-card'+((active&&!isBusy)?' tapmute':'')+'" '+
     ((active&&!isBusy)?'onclick="A.swapBench(\''+js(x.nick)+'\')"':'')+
     ' style="width:96px;text-align:center;opacity:.4">'+
-    '<div style="width:84px;height:84px;border-radius:50%;overflow:hidden;margin:0 auto;'+
+    '<div class="wheel-avatar" style="width:84px;height:84px;border-radius:50%;overflow:hidden;margin:0 auto;'+
     'border:2px solid '+(isBusy?"rgba(255,106,53,.5)":"rgba(255,255,255,.16)")+'">'+avatar+'</div>'+
-    '<div style="font-size:13px;font-weight:700;margin-top:6px;white-space:nowrap;overflow:hidden;'+
+    '<div style="font-size:13px;font-weight:700;margin-top:10px;white-space:nowrap;overflow:hidden;'+
     'text-overflow:ellipsis">'+esc(x.nick)+'</div>'+
     '<div style="font-size:10px;color:#8C99A8">'+(isBusy?"già impegnato":x.elo)+'</div></div>'}).join("")+
     '</div>';
@@ -3431,7 +3437,10 @@ function wheelUpdate(el){
     var c=cards[i],r=c.getBoundingClientRect();
     var d=Math.abs((r.left+r.width/2)-cx);
     var t=Math.max(0,1-d/145);
-    c.style.transform="scale("+(0.55+0.8*t).toFixed(3)+")";
+    /* solo il cerchio si ingrandisce (vedi nota sopra su come è costruita la card):
+       nome ed ELO restano fermi al loro posto, solo un po' più chiari o spenti */
+    var av=c.querySelector(".wheel-avatar");
+    if(av)av.style.transform="scale("+(0.55+0.8*t).toFixed(3)+")";
     c.style.opacity=(0.35+0.65*t).toFixed(2);
   }
 }
