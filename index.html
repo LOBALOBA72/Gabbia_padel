@@ -1426,7 +1426,11 @@ function photoBox(nick,h){
     /* "right center" invece di "center top": tante foto hanno il soggetto verso
        destra (non in cima), quindi si ancora a destra invece che al centro
        per non tagliarlo via */
-    return '<div style="'+base+'background-image:url(\''+foto+'\');background-size:cover;'+
+    /* no-repeat è essenziale: senza, un filo di pixel scoperto per arrotondamenti
+       (tipico con altezze non intere come i riquadri delle partite) veniva
+       riempito ripetendo l'immagine dall'altro capo — sembrava un difetto nella
+       foto, era solo il fondo della stessa foto che si ripeteva in cima */
+    return '<div style="'+base+'background-image:url(\''+foto+'\');background-size:cover;background-repeat:no-repeat;'+
     'background-position:right center;background-color:#0F1620;border:1px solid rgba(255,255,255,.14)"></div>';
   }
   /* iniziali proporzionate all'altezza: la stessa funzione serve i riquadri grandi
@@ -1554,7 +1558,7 @@ function home(){
     liberi.map(function(r){
       var foto=fotoDi(r.nick);
       var avatar=foto?
-        '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-position:right center"></div>':
+        '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-repeat:no-repeat;background-position:right center"></div>':
         '<div style="width:100%;height:100%;background:rgba(200,255,61,.14);color:#C8FF3D;display:grid;'+
         'place-items:center;font-size:24px;font-weight:700">'+esc(initialsOf(r.nick))+'</div>';
       return '<div class="wheel-card" style="width:96px;text-align:center;opacity:.4">'+
@@ -1840,7 +1844,7 @@ function pairs(){
     benchPool.map(function(x){var isBusy=!!busy[x.nick];
     var foto=fotoDi(x.nick);
     var avatar=foto?
-      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-position:right center"></div>':
+      '<div style="width:100%;height:100%;background-image:url(\''+foto+'\');background-size:cover;background-repeat:no-repeat;background-position:right center"></div>':
       '<div style="width:100%;height:100%;background:rgba(200,255,61,.14);color:#C8FF3D;display:grid;'+
       'place-items:center;font-size:24px;font-weight:700">'+esc(initialsOf(x.nick))+'</div>';
     return '<div class="wheel-card'+((active&&!isBusy)?' tapmute':'')+'" '+
@@ -1961,7 +1965,7 @@ function rank(){
     }
     var cerchio=foto?
       '<div style="'+tondo+'background-image:url(\''+foto+'\');'+
-      'background-size:cover;background-position:72% 20%;background-color:#0F1620;'+
+      'background-size:cover;background-repeat:no-repeat;background-position:72% 20%;background-color:#0F1620;'+
       'border:3px solid '+anello+'"></div>':
       '<div style="'+tondo+'background:rgba(255,255,255,.05);'+
       'border:3px solid '+anello+';display:grid;place-items:center;color:'+anello+';'+
@@ -2153,7 +2157,7 @@ function fotoField(p,targetNick){
   var foto=fotoDi(p.nick);
   var anteprima=foto?
     '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;background-image:url(\''+foto+'\');'+
-    'background-size:cover;background-position:center top;background-color:#0F1620"></div>':
+    'background-size:cover;background-repeat:no-repeat;background-position:center top;background-color:#0F1620"></div>':
     '<div style="width:64px;height:64px;border-radius:12px;flex-shrink:0;border:1.5px dashed #26313F;'+
     'display:grid;place-items:center;font-size:22px;color:#8C99A8">+</div>';
   var arg=altrui?"this,'"+js(targetNick)+"'":"this";
